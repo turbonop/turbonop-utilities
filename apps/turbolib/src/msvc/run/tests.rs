@@ -373,3 +373,347 @@ fn less_conservative_modes_verify() {
         }
     }
 }
+
+/// The fixtures `fallback_*` fold: tools/turbolib/loose's three objects.
+fn loose_dir(name: &str) -> PathBuf {
+    let dir = scratch(name);
+    for m in ["a", "b", "c"] {
+        std::fs::copy(
+            testdata(&format!("coff/loose/msvc-od-{m}.obj")),
+            dir.join(format!("{m}.obj")),
+        )
+        .unwrap();
+    }
+    dir
+}
+
+fn lib_in(dir: &Path, out: &str, options: &str) -> Outcome {
+    let mut env = env_in(dir);
+    env.turbolib_options = Some(options.to_string());
+    run(
+        Flavor::Lib,
+        &w(&[
+            "/nologo",
+            "/Brepro",
+            &format!("/OUT:{out}"),
+            "a.obj",
+            "b.obj",
+            "c.obj",
+        ]),
+        &env,
+    )
+}
+
+/// The files a test left beside its outputs.
+fn temps_left(dir: &Path) -> Vec<String> {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.contains(".tmp"))
+        .collect()
+}
+
+/// Whatever goes wrong in folding (a panic on a worker thread, a library
+/// that can't be laid out, a self-check that fails), the library is still
+/// written, unfolded, byte for byte as without folding, with one warning
+/// line; `strict` makes it an error that writes nothing. No file is left
+/// beside the output.
+#[test]
+fn a_failed_fold_writes_the_unfolded_library() {
+    let dir = loose_dir("fallback");
+    let o = lib_in(&dir, "plain.lib", "--fold=none");
+    assert_eq!(o.exit, 0, "{o:?}");
+    let plain = std::fs::read(dir.join("plain.lib")).unwrap();
+    // Folding does change it, and passes its own check.
+    let o = lib_in(&dir, "folded.lib", "--fold=identical --precomp=library");
+    assert_eq!(o.exit, 0, "{o:?}");
+    assert!(!o.stdout.contains("warning"), "{o:?}");
+    assert_ne!(std::fs::read(dir.join("folded.lib")).unwrap(), plain);
+    for (inject, says) in [
+        ("panic", "panic: injected panic at "),
+        ("verify", "the self-check failed: injected failure"),
+        ("layout", "injected layout failure"),
+    ] {
+        let options = format!("--fold=identical --precomp=library --inject-failure={inject}");
+        let o = lib_in(&dir, "x.lib", &options);
+        assert_eq!(o.exit, 0, "{inject}: {o:?}");
+        let warnings: Vec<&str> = o.stdout.lines().filter(|l| l.contains("warning")).collect();
+        assert_eq!(warnings.len(), 1, "{inject}: {o:?}");
+        assert!(
+            warnings[0].starts_with(
+                "turbolib: warning: folding x.lib failed, so it was written unfolded: "
+            ),
+            "{inject}: {o:?}"
+        );
+        assert!(warnings[0].contains(says), "{inject}: {o:?}");
+        assert_eq!(std::fs::read(dir.join("x.lib")).unwrap(), plain, "{inject}");
+        // /WX doesn't make it an error: it is turbolib's, not lib.exe's.
+        let mut env = env_in(&dir);
+        env.turbolib_options = Some(options.clone());
+        let o = run(
+            Flavor::Lib,
+            &w(&[
+                "/nologo",
+                "/Brepro",
+                "/WX",
+                "/OUT:wx.lib",
+                "a.obj",
+                "b.obj",
+                "c.obj",
+            ]),
+            &env,
+        );
+        assert_eq!(o.exit, 0, "{inject}: {o:?}");
+        assert_eq!(
+            std::fs::read(dir.join("wx.lib")).unwrap(),
+            plain,
+            "{inject}"
+        );
+        // Strict: an error, and nothing written.
+        let _ = std::fs::remove_file(dir.join("y.lib"));
+        let o = lib_in(&dir, "y.lib", &format!("{options} --strict"));
+        assert_eq!(o.exit, 1000, "{inject}: {o:?}");
+        assert!(
+            o.stdout
+                .contains("fatal error LNK1000: turbolib: folding failed: "),
+            "{o:?}"
+        );
+        assert!(!dir.join("y.lib").exists(), "{inject}");
+        // llvm-lib's flavor too.
+        let mut env = env_in(&dir);
+        env.turbolib_options = Some(options);
+        let o = run(
+            Flavor::LlvmLib,
+            &w(&["/OUT:llvm.lib", "a.obj", "b.obj", "c.obj"]),
+            &env,
+        );
+        assert_eq!(o.exit, 0, "{inject}: {o:?}");
+        assert!(
+            o.stderr
+                .contains("turbolib: warning: folding llvm.lib failed"),
+            "{o:?}"
+        );
+    }
+    assert!(temps_left(&dir).is_empty(), "{:?}", temps_left(&dir));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An output another process holds open for a moment is replaced once it
+/// lets go (Windows: a sharing violation is retried); a read-only output
+/// isn't replaced, and the error says why.
+#[cfg(windows)]
+#[test]
+fn an_output_held_open_for_a_moment_is_replaced() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let dir = loose_dir("held");
+    let o = lib_in(&dir, "held.lib", "--fold=identical");
+    assert_eq!(o.exit, 0, "{o:?}");
+    // Open with no sharing at all, as a scanner might.
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(dir.join("held.lib"))
+        .unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        drop(held);
+    });
+    let o = lib_in(&dir, "held.lib", "--fold=none");
+    release.join().unwrap();
+    assert_eq!(o.exit, 0, "{o:?}");
+    let o2 = lib_in(&dir, "plain.lib", "--fold=none");
+    assert_eq!(o2.exit, 0, "{o2:?}");
+    assert_eq!(
+        std::fs::read(dir.join("held.lib")).unwrap(),
+        std::fs::read(dir.join("plain.lib")).unwrap()
+    );
+    // Read-only: refused at once, as lib.exe refuses it.
+    let ro = dir.join("plain.lib");
+    let mut p = std::fs::metadata(&ro).unwrap().permissions();
+    p.set_readonly(true);
+    std::fs::set_permissions(&ro, p.clone()).unwrap();
+    // (Without folding, which under a loaded test run can itself take
+    // seconds: the time measured is the rename's.)
+    let start = std::time::Instant::now();
+    let o = lib_in(&dir, "plain.lib", "--fold=none");
+    assert!(
+        start.elapsed() < crate::output::RETRY,
+        "{:?}",
+        start.elapsed()
+    );
+    assert_eq!(o.exit, 1104, "{o:?}");
+    assert!(o.stdout.contains("cannot open file 'plain.lib'"), "{o:?}");
+    #[allow(clippy::permissions_set_readonly_false)]
+    p.set_readonly(false);
+    std::fs::set_permissions(&ro, p).unwrap();
+    assert!(temps_left(&dir).is_empty(), "{:?}", temps_left(&dir));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Paths past MAX_PATH and outside ASCII, an output that is one of the
+/// inputs, and a response file in UTF-8 and UTF-16 naming them.
+#[test]
+fn long_and_non_ascii_paths_and_the_output_as_an_input() {
+    let base = loose_dir("paths");
+    let mut deep = base.clone();
+    for i in 0..6 {
+        deep = deep.join(format!("ünïcødé-директория-{i}-{}", "x".repeat(30)));
+    }
+    std::fs::create_dir_all(&deep).unwrap();
+    assert!(deep.as_os_str().len() > 300, "{}", deep.display());
+    for m in ["a", "b", "c"] {
+        std::fs::copy(
+            base.join(format!("{m}.obj")),
+            deep.join(format!("{m}-é.obj")),
+        )
+        .unwrap();
+    }
+    let rsp = "/nologo /Brepro /OUT:\"out ü.lib\" a-é.obj b-é.obj\r\n";
+    std::fs::write(deep.join("utf8.rsp"), rsp).unwrap();
+    let mut utf16 = vec![0xFF, 0xFE];
+    for u in rsp.encode_utf16() {
+        utf16.extend_from_slice(&u.to_le_bytes());
+    }
+    std::fs::write(deep.join("utf16.rsp"), utf16).unwrap();
+    let env = |options: &str| {
+        let mut e = env_in(&deep);
+        e.turbolib_options = Some(options.to_string());
+        e
+    };
+    let folding = "--fold=identical --precomp=library --strict";
+    let o = run(Flavor::Lib, &w(&["@utf8.rsp"]), &env(folding));
+    assert_eq!(o.exit, 0, "{o:?}");
+    let first = std::fs::read(deep.join("out ü.lib")).unwrap();
+    let o = run(Flavor::Lib, &w(&["@utf16.rsp"]), &env(folding));
+    assert_eq!(o.exit, 0, "{o:?}");
+    assert_eq!(std::fs::read(deep.join("out ü.lib")).unwrap(), first);
+    // The output as an input: `lib x.lib c.obj` adds c.obj to x.lib, here
+    // a library made without folding.
+    let o = run(Flavor::Lib, &w(&["@utf8.rsp"]), &env("--fold=none"));
+    assert_eq!(o.exit, 0, "{o:?}");
+    let o = run(
+        Flavor::Lib,
+        &w(&["/nologo", "/Brepro", "out ü.lib", "c-é.obj"]),
+        &env(folding),
+    );
+    assert_eq!(o.exit, 0, "{o:?}");
+    let data = std::fs::read(deep.join("out ü.lib")).unwrap();
+    let archive = turbonop_archive::Archive::parse(&data).unwrap();
+    let names: Vec<String> = archive.files().map(|m| text(&m.name)).collect();
+    assert!(names.iter().any(|n| n == "c-é.obj"), "{names:?}");
+    assert!(names.iter().any(|n| n.starts_with("turbolib")), "{names:?}");
+    assert!(temps_left(&deep).is_empty(), "{:?}", temps_left(&deep));
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+/// A library folded before, archived again with more members (or two
+/// folded libraries combined): the self-check doesn't accept what folding
+/// makes of it (a member newly referring to the input's precompiled-types
+/// member), so the library is written unfolded, with the warning, and
+/// links as lib.exe's combination would, except that the synthesized
+/// members' `__turbolib$alias` stays out of the index.
+#[test]
+fn a_folded_library_archived_again() {
+    let dir = loose_dir("again");
+    let o = lib_in(&dir, "x.lib", "--fold=identical --precomp=library");
+    assert_eq!(o.exit, 0, "{o:?}");
+    let mut env = env_in(&dir);
+    env.turbolib_options = Some("--fold=identical --precomp=library".into());
+    let o = run(
+        Flavor::Lib,
+        &w(&["/nologo", "/Brepro", "/OUT:y.lib", "x.lib", "c.obj"]),
+        &env,
+    );
+    assert_eq!(o.exit, 0, "{o:?}");
+    assert!(
+        o.stdout.contains("turbolib: warning: folding y.lib failed, so it was written unfolded: the self-check failed"),
+        "{o:?}"
+    );
+    let o = run(
+        Flavor::Lib,
+        &w(&["/nologo", "/Brepro", "/OUT:plain.lib", "x.lib", "c.obj"]),
+        &env_in(&dir),
+    );
+    assert_eq!(o.exit, 0, "{o:?}");
+    let y = std::fs::read(dir.join("y.lib")).unwrap();
+    assert_eq!(y, std::fs::read(dir.join("plain.lib")).unwrap());
+    let archive = turbonop_archive::Archive::parse(&y).unwrap();
+    assert!(
+        archive
+            .symbols()
+            .iter()
+            .all(|s| s.name != turbonop_fold::rewrite::ALIAS_DEFAULT),
+        "the alias default is never indexed"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An output that can't be written (here, its directory doesn't exist; a
+/// full disk takes the same path): lib.exe's LNK1104, then the system's
+/// reason, folded or not, and nothing left behind.
+#[test]
+fn an_output_that_cant_be_written() {
+    let dir = loose_dir("unwritable");
+    for options in ["--fold=none", "--fold=identical --precomp=library"] {
+        let o = lib_in(&dir, "missing/x.lib", options);
+        assert_eq!(o.exit, 1104, "{options}: {o:?}");
+        assert!(
+            o.stdout
+                .contains("fatal error LNK1104: cannot open file 'missing/x.lib'"),
+            "{o:?}"
+        );
+        assert!(o.stdout.contains("turbolib: missing/x.lib: "), "{o:?}");
+    }
+    assert!(temps_left(&dir).is_empty(), "{:?}", temps_left(&dir));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// One library and nothing else: copied byte for byte, as lib.exe copies
+/// it (its dates and tables kept, /Brepro or not), unless turbolib folds;
+/// a /REMOVE makes it write the library again.
+#[test]
+fn one_library_alone_is_copied() {
+    let dir = loose_dir("copy");
+    let o = lib_in(&dir, "x.lib", "--fold=none");
+    assert_eq!(o.exit, 0, "{o:?}");
+    // Not as turbolib would write it: a date in each member header.
+    let mut original = std::fs::read(dir.join("x.lib")).unwrap();
+    let archive = turbonop_archive::Archive::parse(&original).unwrap();
+    let at = archive.files().last().unwrap().header_offset as usize + 16;
+    original[at..at + 12].copy_from_slice(b"1234567890  ");
+    std::fs::write(dir.join("in.lib"), &original).unwrap();
+    for words in [
+        &["/nologo", "/OUT:y.lib", "in.lib"][..],
+        &["/nologo", "/Brepro", "/MACHINE:X64", "/OUT:y.lib", "in.lib"][..],
+    ] {
+        let o = run(Flavor::Lib, &w(words), &env_in(&dir));
+        assert_eq!(o.exit, 0, "{o:?}");
+        assert_eq!(o.stdout, "", "{o:?}");
+        assert_eq!(std::fs::read(dir.join("y.lib")).unwrap(), original);
+    }
+    let o = run(
+        Flavor::Lib,
+        &w(&[
+            "/nologo",
+            "/Brepro",
+            "/REMOVE:none.obj",
+            "/OUT:z.lib",
+            "in.lib",
+        ]),
+        &env_in(&dir),
+    );
+    assert_eq!(o.exit, 0, "{o:?}");
+    assert_ne!(std::fs::read(dir.join("z.lib")).unwrap(), original);
+    // Folding: folded, not copied.
+    let mut env = env_in(&dir);
+    env.turbolib_options = Some("--fold=identical".into());
+    let o = run(
+        Flavor::Lib,
+        &w(&["/nologo", "/Brepro", "/OUT:f.lib", "in.lib"]),
+        &env,
+    );
+    assert_eq!(o.exit, 0, "{o:?}");
+    assert_ne!(std::fs::read(dir.join("f.lib")).unwrap(), original);
+    let _ = std::fs::remove_dir_all(&dir);
+}

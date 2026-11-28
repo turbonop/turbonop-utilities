@@ -426,6 +426,27 @@ x64. Where the 3.5 MB went:
   were enforced when `tools/turbolib/tables` ran (CET shadow stacks); the
   ARM64 programs, linked but not run; `.voltbl` and `.retplne` from
   compilers other than cl 14.52.
+- **Hardening (docs/turbolib-guide.md).** Done: a failed fold (panic,
+  layout, self-check) writes the unfolded library with one warning;
+  `verify` (on by default), `strict`, `inject-failure`; output retries and
+  cleanup; `tools/turbolib/incremental` (incremental, FASTLINK, LTCG,
+  lld-link; x64, x86, ARM64); `tools/turbolib/corpus/everylib.py`. Open:
+  - the self-check costs about as much as folding (more on a loaded
+    machine): make it cheaper, then decide its default again;
+  - everylib.py against lib.exe's remaking: 305 of the 581 libraries
+    rerun showed turbolib `--fold=none /Brepro` not byte-identical to
+    `lib.exe /Brepro` (not looked into; the earlier relib.py checks were
+    without /Brepro on LLVM's libraries); rerun all 1,851 and the corpus;
+  - the engine puts a COMDAT in two synthesized members (`libucrt.lib`,
+    `Uuid.lib`), and changes `.retplne` (`BufferOverflow.lib`): the
+    self-check falls back;
+  - re-folding a folded library (or combining folded libraries) falls
+    back: a member newly refers to the input's precompiled-types member;
+  - `/GL` objects' index: `use_shared`-like inline functions' IL
+    references read as none (`turbonop_pe::ltcg::function_il`), so fewer
+    names are listed than lib.exe lists (tools/turbolib/incremental);
+  - link.exe's incremental relink after a `/Yu` library member changes
+    fails with lib.exe's library too (LNK1235; LNK1236 folded).
 - **Phase 1: what is left of the writers.**
   - CodeView: done (`symbol_refs`, `c13`, `write`, `remap`; checked on
     both corpora by `turbonop-codeview`'s `corpus` example). Still open:

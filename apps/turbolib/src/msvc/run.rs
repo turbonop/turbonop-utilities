@@ -13,7 +13,7 @@ use super::library;
 use super::options::{self, Options};
 use super::order::{self, Input};
 use crate::output;
-use crate::settings::{Fold, Locals, Pick, Precomp, Pull, Settings};
+use crate::settings::{Fold, Inject, Locals, Pick, Precomp, Pull, Settings};
 use std::borrow::Cow;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -396,6 +396,35 @@ fn build(
         }
     }
     clock.lap("open");
+    // Measured: lib.exe given one library and nothing else (no objects, no
+    // /REMOVE) copies it, byte for byte, dates and tables as they were
+    // (with /Brepro, /MACHINE, /NAME, /WX too), and says nothing. turbolib
+    // does the same unless it is to fold. (Its own tables would differ
+    // where the input's weren't made from its members, as ARM64X import
+    // libraries' /<ECSYMBOLS>/ aren't.)
+    let folding =
+        settings.fold != Fold::None || settings.precomp != Precomp::None || settings.report_odr;
+    if flavor == Flavor::Lib
+        && !folding
+        && read.len() == 1
+        && opts.remove.is_empty()
+        && turbonop_archive::Archive::parse(&read[0].data).is_ok_and(|a| !a.is_thin())
+    {
+        if !r.write_output {
+            return Ok(());
+        }
+        let out = output_path(opts, &read);
+        let path = resolve(&env.cwd, &out);
+        let written = output::write_pieces_beside(&path, &[&read[0].data]);
+        // (The output may be the input: let it go first.)
+        drop(read);
+        if let Err(e) = written.and_then(|t| t.replace(&path)) {
+            let failed = r.report(Diag::fatal(1104, format!("cannot open file '{out}'")));
+            r.lines.push(format!("turbolib: {out}: {e}"));
+            return failed;
+        }
+        return Ok(());
+    }
     // The threads to run: with others' turbolib processes in mind (see
     // `slots`), unless a number was given.
     let mut slots = crate::slots::Slots::default();
@@ -538,172 +567,319 @@ fn build(
         });
     }
 
-    // Folding: the members rewritten, then the synthesized ones.
-    clock.lap("order");
-    let folded =
-        (settings.fold != Fold::None || settings.precomp != Precomp::None || settings.report_odr)
-            .then(|| {
-                let inputs: Vec<rewrite::Input<'_>> = members
-                    .iter()
-                    .map(|m| rewrite::Input {
-                        name: &m.name,
-                        data: m.data,
-                    })
-                    .collect();
-                let pull = match settings.pull {
-                    Pull::Preserve => rewrite::Pull::Preserve,
-                    Pull::Relaxed => rewrite::Pull::Relaxed,
-                };
-                rewrite::rewrite(
-                    &inputs,
-                    rewrite::Options {
-                        pull,
-                        weak_externals: false,
-                        fold: match (settings.fold, settings.pick) {
-                            (Fold::None, _) => rewrite::Fold::None,
-                            (Fold::Identical, _) => rewrite::Fold::Identical,
-                            (Fold::SelectAny, Pick::First) => {
-                                rewrite::Fold::SelectAny(rewrite::Pick::First)
-                            }
-                            (Fold::SelectAny, Pick::Largest) => {
-                                rewrite::Fold::SelectAny(rewrite::Pick::Largest)
-                            }
-                        },
-                        locals: match settings.locals {
-                            Locals::Keep => rewrite::Locals::Keep,
-                            Locals::Copy => rewrite::Locals::Copy,
-                            Locals::Merge => rewrite::Locals::Merge,
-                        },
-                        odr: settings.report_odr,
-                        precomp: match settings.precomp {
-                            Precomp::Library => rewrite::Precomp::Library { min: 2 },
-                            Precomp::Clustered(max) => rewrite::Precomp::Clustered {
-                                min: 2,
-                                max,
-                                weight: turbonop_fold::rewrite::precomp::cluster::WEIGHT,
-                            },
-                            Precomp::None => rewrite::Precomp::None,
-                        },
-                    },
-                )
-            });
-    let finals: Vec<Final<'_>> = match &folded {
-        None => members
-            .iter()
-            .map(|m| Final {
-                name: &m.name,
-                fields: m.fields,
-                data: m.data,
-                holes: &[],
-                symbol_table: None,
-                place: Cow::Borrowed(&m.place),
-                index_only: None,
-                synthesized: false,
-            })
-            .collect(),
-        Some(folded) => {
-            if settings.stats {
-                r.lines.extend(stats_lines(&folded.report, &members));
-                // What folding's members hold in memory (their bytes but
-                // the holes, which are the inputs').
-                let held = |synthesized: bool| {
-                    let (mut bytes, mut holes) = (0, 0);
-                    for m in folded
-                        .members
-                        .iter()
-                        .filter(|m| m.synthesized == synthesized)
-                    {
-                        if let Cow::Owned(d) = &m.data {
-                            bytes += d.len();
-                            holes += m.holes.len();
-                        }
-                    }
-                    format!("{:.1} MiB ({holes} holes)", bytes as f64 / 1_048_576.0)
-                };
-                r.lines.push(format!(
-                    "turbolib: held: rewritten members {}, synthesized {}",
-                    held(false),
-                    held(true)
-                ));
-            }
-            if settings.report_odr {
-                r.lines.extend(odr_lines(&folded.report));
-            }
-            let synthesized = style.object_fields(now(), false);
-            // The members in their order, with the synthesized members
-            // before or after them.
-            let mut original = 0;
-            folded
-                .members
-                .iter()
-                .map(|m| {
-                    let from = (!m.synthesized).then(|| {
-                        original += 1;
-                        &members[original - 1]
-                    });
-                    Final {
-                        name: &m.name,
-                        fields: from.map_or(synthesized, |f| f.fields),
-                        data: &m.data,
-                        holes: &m.holes,
-                        symbol_table: m.symbol_table,
-                        index_only: m.index_only.as_deref(),
-                        synthesized: m.synthesized,
-                        place: from.map_or_else(
-                            || Cow::Owned(text(&m.name)),
-                            |f| Cow::Borrowed(f.place.as_ref()),
-                        ),
-                    }
-                })
-                .collect()
-        }
+    // lib.exe's warnings about names defined twice: folding moves no
+    // strong definition, so they are the unfolded library's.
+    let duplicates = if flavor == Flavor::Lib {
+        let strong = turbonop_par::map(&members, 16, |m| library::strong_definitions(m.data, None));
+        let places: Vec<String> = members.iter().map(|m| m.place.clone()).collect();
+        library::duplicate_warnings(&strong, &places)
+    } else {
+        Vec::new()
     };
 
-    // The index, and lib.exe's warnings about names defined twice.
+    // Folding: the members rewritten, then the synthesized ones. Anything
+    // that goes wrong in it is caught, and the library is then written
+    // unfolded (see `guard`).
+    clock.lap("order");
+    let mut fell_back: Option<String> = None;
+    let folded = if folding {
+        match crate::guard::catch(|| fold(&members, settings)) {
+            Ok(f) => Some(f),
+            Err(why) => {
+                fell_back = Some(why);
+                None
+            }
+        }
+    } else {
+        None
+    };
+    // Folding that changed nothing (a library of import objects, or of
+    // objects sharing nothing): the unfolded library is the same bytes,
+    // and is written without a check.
+    let unchanged = folded.as_ref().is_some_and(|f| {
+        f.members.len() == members.len()
+            && f.members.iter().zip(&members).all(|(o, m)| {
+                !o.synthesized && o.holes.is_empty() && *o.name == *m.name && *o.data == *m.data
+            })
+    });
+    if let Some(folded) = &folded {
+        if settings.stats {
+            r.lines.extend(stats_lines(&folded.report, &members));
+            // What folding's members hold in memory (their bytes but
+            // the holes, which are the inputs').
+            let held = |synthesized: bool| {
+                let (mut bytes, mut holes) = (0, 0);
+                for m in folded
+                    .members
+                    .iter()
+                    .filter(|m| m.synthesized == synthesized)
+                {
+                    if let Cow::Owned(d) = &m.data {
+                        bytes += d.len();
+                        holes += m.holes.len();
+                    }
+                }
+                format!("{:.1} MiB ({holes} holes)", bytes as f64 / 1_048_576.0)
+            };
+            r.lines.push(format!(
+                "turbolib: held: rewritten members {}, synthesized {}",
+                held(false),
+                held(true)
+            ));
+        }
+        if settings.report_odr {
+            r.lines.extend(odr_lines(&folded.report));
+        }
+    }
+    for w in duplicates {
+        r.report(w)?;
+    }
     clock.lap("fold");
     let ec = matches!(check.machine, Some(inputs::ARM64EC | inputs::ARM64X));
-    let symbols = turbonop_par::map(&finals, 16, |m| {
+    let unfolded: Vec<Final<'_>> = members
+        .iter()
+        .map(|m| Final {
+            name: &m.name,
+            fields: m.fields,
+            data: m.data,
+            holes: &[],
+            symbol_table: None,
+            place: Cow::Borrowed(&m.place),
+            index_only: None,
+        })
+        .collect();
+    let out = output_path(opts, &read);
+    let path = resolve(&env.cwd, &out);
+    // lib.exe's words, then the system's reason on a line of its own.
+    let cannot = |r: &mut Reporter, out: &str, e: &io::Error| {
+        let d = match flavor {
+            Flavor::Lib => Diag::fatal(1104, format!("cannot open file '{out}'")),
+            Flavor::LlvmLib => Diag::llvm(Kind::Fatal, "cannot write the output").on(out),
+        };
+        let result = r.report(d);
+        r.lines.push(format!("turbolib: {out}: {e}"));
+        result
+    };
+
+    if sharing {
+        // Slots others let go of since.
+        crate::slots::share(&mut slots, total);
+    }
+
+    // The folded library, written beside the output and checked; or why
+    // it can't be used.
+    let mut temp: Option<output::Temp> = None;
+    if let Some(folded) = folded.as_ref().filter(|_| !unchanged) {
+        let finals = folded_finals(folded, &members, style);
+        let write_output = r.write_output;
+        let checked = std::cell::Cell::new(None);
+        let attempt = crate::guard::catch(|| -> Result<Option<output::Temp>, Attempt> {
+            if settings.inject == Some(Inject::Layout) {
+                return Err(Attempt::Unusable("injected layout failure".into()));
+            }
+            let layout = lay_out(flavor, style, ec, &finals).map_err(|d| {
+                Attempt::Unusable(format!("the folded library can't be laid out: {}", d.text))
+            })?;
+            if !write_output {
+                return Ok(None);
+            }
+            let datas: Vec<output::Bytes<'_>> = finals.iter().map(Final::bytes).collect();
+            let written = output::write_beside(&path, &layout, &datas, style.conventions().padding)
+                .map_err(Attempt::Io)?;
+            if settings.verify {
+                let start = std::time::Instant::now();
+                self_check(flavor, style, ec, &unfolded, &written, settings)
+                    .map_err(Attempt::Unusable)?;
+                checked.set(Some(start.elapsed()));
+            }
+            Ok(Some(written))
+        });
+        match attempt {
+            Ok(Ok(t)) => temp = t,
+            // The disk, not folding: the unfolded library would fail the
+            // same way.
+            Ok(Err(Attempt::Io(e))) => return cannot(r, &out, &e),
+            Ok(Err(Attempt::Unusable(why))) | Err(why) => fell_back = Some(why),
+        }
+        clock.lap("archive");
+        if let (true, Some(t)) = (settings.stats, checked.get()) {
+            r.lines.push(format!(
+                "turbolib: self-check {:.3} s (in archive)",
+                t.as_secs_f64()
+            ));
+        }
+    }
+    if let Some(why) = &fell_back {
+        if settings.strict {
+            let text = format!("turbolib: folding failed: {why}");
+            return r.report(match flavor {
+                Flavor::Lib => Diag::fatal(1000, text),
+                Flavor::LlvmLib => Diag::llvm(Kind::Fatal, text),
+            });
+        }
+        r.lines.push(format!(
+            "turbolib: warning: folding {out} failed, so it was written unfolded: {why}"
+        ));
+    }
+    if folded.is_none() || fell_back.is_some() || unchanged {
+        let layout = match lay_out(flavor, style, ec, &unfolded) {
+            Ok(l) => l,
+            Err(d) => return r.report(d),
+        };
+        if !r.write_output {
+            return Ok(());
+        }
+        let datas: Vec<output::Bytes<'_>> = unfolded.iter().map(Final::bytes).collect();
+        match output::write_beside(&path, &layout, &datas, style.conventions().padding) {
+            Ok(t) => temp = Some(t),
+            Err(e) => return cannot(r, &out, &e),
+        }
+        clock.lap("archive");
+    }
+    let Some(temp) = temp else {
+        return Ok(());
+    };
+    // The inputs are mapped, and the output may be one of them (`lib
+    // x.lib a.obj` updates x.lib): let them go before the new file takes
+    // its place.
+    drop(unfolded);
+    drop(folded);
+    drop(members);
+    drop(members_of);
+    drop(archives);
+    drop(read);
+    if let Err(e) = temp.replace(&path) {
+        return cannot(r, &out, &e);
+    }
+    clock.lap("write");
+    if settings.stats {
+        r.lines.push(clock.report());
+    }
+    Ok(())
+}
+
+/// Why a folded library wasn't used.
+enum Attempt {
+    /// Writing it failed (the disk, the output's place).
+    Io(io::Error),
+    /// It can't be used: the unfolded library is written instead.
+    Unusable(String),
+}
+
+/// Folds `members` as `settings` say.
+fn fold<'d>(members: &'d [Placed<'_>], settings: &Settings) -> rewrite::Output<'d> {
+    if settings.inject == Some(Inject::Panic) {
+        // On worker threads, as a panic in folding would be.
+        let items = [0u8; 64];
+        turbonop_par::map(&items, 1, |_| -> u8 { panic!("injected panic") });
+    }
+    let inputs: Vec<rewrite::Input<'_>> = members
+        .iter()
+        .map(|m| rewrite::Input {
+            name: &m.name,
+            data: m.data,
+        })
+        .collect();
+    let pull = match settings.pull {
+        Pull::Preserve => rewrite::Pull::Preserve,
+        Pull::Relaxed => rewrite::Pull::Relaxed,
+    };
+    rewrite::rewrite(
+        &inputs,
+        rewrite::Options {
+            pull,
+            weak_externals: false,
+            fold: match (settings.fold, settings.pick) {
+                (Fold::None, _) => rewrite::Fold::None,
+                (Fold::Identical, _) => rewrite::Fold::Identical,
+                (Fold::SelectAny, Pick::First) => rewrite::Fold::SelectAny(rewrite::Pick::First),
+                (Fold::SelectAny, Pick::Largest) => {
+                    rewrite::Fold::SelectAny(rewrite::Pick::Largest)
+                }
+            },
+            locals: match settings.locals {
+                Locals::Keep => rewrite::Locals::Keep,
+                Locals::Copy => rewrite::Locals::Copy,
+                Locals::Merge => rewrite::Locals::Merge,
+            },
+            odr: settings.report_odr,
+            precomp: match settings.precomp {
+                Precomp::Library => rewrite::Precomp::Library { min: 2 },
+                Precomp::Clustered(max) => rewrite::Precomp::Clustered {
+                    min: 2,
+                    max,
+                    weight: turbonop_fold::rewrite::precomp::cluster::WEIGHT,
+                },
+                Precomp::None => rewrite::Precomp::None,
+            },
+        },
+    )
+}
+
+/// The members as written after folding: the rewritten ones in their
+/// order, with the synthesized ones among them.
+fn folded_finals<'d>(
+    folded: &'d rewrite::Output<'_>,
+    members: &'d [Placed<'_>],
+    style: Style,
+) -> Vec<Final<'d>> {
+    let synthesized = style.object_fields(now(), false);
+    let mut original = 0;
+    folded
+        .members
+        .iter()
+        .map(|m| {
+            let from = (!m.synthesized).then(|| {
+                original += 1;
+                &members[original - 1]
+            });
+            Final {
+                name: &m.name,
+                fields: from.map_or(synthesized, |f| f.fields),
+                data: &m.data,
+                holes: &m.holes,
+                symbol_table: m.symbol_table,
+                index_only: m.index_only.as_deref(),
+                place: from.map_or_else(
+                    || Cow::Owned(text(&m.name)),
+                    |f| Cow::Borrowed(f.place.as_ref()),
+                ),
+            }
+        })
+        .collect()
+}
+
+/// The archive `finals` make: its index (the members' symbols) and
+/// layout.
+fn lay_out<'d>(
+    flavor: Flavor,
+    style: Style,
+    ec: bool,
+    finals: &[Final<'d>],
+) -> Result<Layout<'d>, Diag> {
+    let symbols = turbonop_par::map(finals, 16, |m| {
         library::member_symbols(flavor, &m.place, m.data, m.symbol_table, ec)
     });
     let mut member_symbols = Vec::with_capacity(symbols.len());
-    for (s, m) in symbols.into_iter().zip(&finals) {
-        match s {
-            Ok(mut s) => {
-                if let Some(names) = m.index_only {
-                    s.symbols = names
-                        .iter()
-                        .map(|n| MemberSymbol::defined(n.as_slice()))
-                        .collect();
-                } else if m.synthesized {
-                    // Never indexed, so it loads no member of its own (see
-                    // ALIAS_DEFAULT).
-                    s.symbols
-                        .retain(|x| *x.name != *turbonop_fold::rewrite::ALIAS_DEFAULT);
-                }
-                member_symbols.push(s);
-            }
-            Err(d) => return r.report(d),
+    for (s, m) in symbols.into_iter().zip(finals) {
+        let mut s = s?;
+        if let Some(names) = m.index_only {
+            s.symbols = names
+                .iter()
+                .map(|n| MemberSymbol::defined(n.as_slice()))
+                .collect();
+        } else {
+            // Never indexed, so it loads no member of its own (see
+            // ALIAS_DEFAULT): a synthesized member's, and one an input
+            // library's synthesized member defines (a library folded
+            // before, archived again).
+            s.symbols
+                .retain(|x| *x.name != *turbonop_fold::rewrite::ALIAS_DEFAULT);
         }
+        member_symbols.push(s);
     }
-    if flavor == Flavor::Lib {
-        // Folding's own members define names no input does, except
-        // `__turbolib$alias`, which each defines alike: never a duplicate.
-        let strong = turbonop_par::map(&finals, 16, |m| {
-            if m.synthesized {
-                Vec::new()
-            } else {
-                library::strong_definitions(m.data, m.symbol_table)
-            }
-        });
-        let places: Vec<String> = finals.iter().map(|m| m.place.to_string()).collect();
-        for w in library::duplicate_warnings(&strong, &places) {
-            r.report(w)?;
-        }
-    }
-    clock.lap("symbols");
     let index = library::index(flavor, member_symbols, ec);
-    clock.lap("index");
-    let headers: Vec<MemberHeader<'_>> = finals
+    let headers: Vec<MemberHeader<'d>> = finals
         .iter()
         .map(|m| MemberHeader {
             name: m.name,
@@ -711,55 +887,81 @@ fn build(
             size: m.len() as u64,
         })
         .collect();
-    let layout = match Layout::new(&headers, &index, style, SizeLimit::FourGiB) {
-        Ok(l) => l,
-        Err(e) => return r.report(write_error(flavor, &e)),
-    };
-    if !r.write_output {
-        return Ok(());
-    }
-    let out = output_path(opts, &read);
-    let path = resolve(&env.cwd, &out);
-    let cannot = |out: String| match flavor {
-        Flavor::Lib => Diag::fatal(1104, format!("cannot open file '{out}'")),
-        Flavor::LlvmLib => Diag::llvm(Kind::Fatal, "cannot write the output").on(out),
-    };
-    if sharing {
-        // Slots others let go of since.
-        crate::slots::share(&mut slots, total);
-    }
-    let datas: Vec<output::Bytes<'_>> = finals
+    Layout::new(&headers, &index, style, SizeLimit::FourGiB).map_err(|e| write_error(flavor, &e))
+}
+
+/// Checks the folded library written at `written` against the library
+/// `unfolded` makes (`turbonop_verify`, in the modes folding used), and
+/// says why it fails if it does.
+fn self_check(
+    flavor: Flavor,
+    style: Style,
+    ec: bool,
+    unfolded: &[Final<'_>],
+    written: &output::Temp,
+    settings: &Settings,
+) -> Result<(), String> {
+    use turbonop_verify::library as v;
+    let layout = lay_out(flavor, style, ec, unfolded)
+        .map_err(|d| format!("the unfolded library can't be laid out: {}", d.text))?;
+    let members: Vec<v::LaidOut<'_>> = unfolded
         .iter()
-        .map(|m| output::Bytes {
-            data: m.data,
-            holes: m.holes,
-        })
+        .enumerate()
+        .map(|(i, m)| (Cow::Borrowed(m.name), layout.offset(i), m.data))
         .collect();
-    let Ok(temp) = output::write_beside(&path, &layout, &datas, style.conventions().padding) else {
-        return r.report(cannot(out));
+    let map = turbonop_mmap::Mmap::open(written.path())
+        .map_err(|e| format!("the folded library can't be read back: {e}"))?;
+    let options = v::Options {
+        pull: match settings.pull {
+            Pull::Preserve => v::Pull::Preserve,
+            Pull::Relaxed => v::Pull::Relaxed,
+        },
+        fold: match settings.fold {
+            Fold::SelectAny => v::Fold::SelectAny,
+            Fold::None | Fold::Identical => v::Fold::Identical,
+        },
+        locals: settings.locals != Locals::Keep,
     };
-    clock.lap("archive");
-    // The inputs are mapped, and the output may be one of them (`lib
-    // x.lib a.obj` updates x.lib): let them go before the new file takes
-    // its place.
-    drop(datas);
-    drop(layout);
-    drop(headers);
-    drop(index);
-    drop(finals);
-    drop(folded);
-    drop(members);
-    drop(members_of);
-    drop(archives);
-    drop(read);
-    if output::replace(&temp, &path).is_err() {
-        return r.report(cannot(out));
+    let report = v::verify_laid_out(layout.head(), members, &map, &options)?;
+    if settings.inject == Some(Inject::Verify) {
+        return Err("the self-check failed: injected failure".into());
     }
-    clock.lap("write");
-    if settings.stats {
-        r.lines.push(clock.report());
+    // The index checks of the unfolded library itself (lib.exe's rules for
+    // its index, which `turbonop_verify` models but doesn't follow
+    // everywhere: ARM64 import libraries' EC symbols, members that win a
+    // name) aren't about folding; nor is the same check failing on the
+    // folded library.
+    let index_check = |c: &str| {
+        [
+            "index entries no member defines",
+            "index entries naming a member other than the first definer",
+            "definitions missing from the index",
+            "second linker members not sorted",
+            "linker members that disagree",
+        ]
+        .iter()
+        .any(|k| c.ends_with(k))
+    };
+    let original_failed = |c: &str| {
+        report.failed(&format!(
+            "original {}",
+            c.strip_prefix("rewritten ").unwrap_or(c)
+        ))
+    };
+    match report.findings().find(|(s, c, _)| {
+        *s == turbonop_verify::report::Severity::Failure
+            && !(index_check(c) && (c.starts_with("original ") || original_failed(c)))
+    }) {
+        None => Ok(()),
+        Some((_, category, f)) => Err(format!(
+            "the self-check failed: {category} ({}{})",
+            f.count,
+            f.examples
+                .first()
+                .map(|e| format!(", e.g. {e}"))
+                .unwrap_or_default()
+        )),
     }
-    Ok(())
 }
 
 /// How long each stage took, for `--stats`.
@@ -805,8 +1007,15 @@ struct Final<'d> {
     place: Cow<'d, str>,
     /// The index's names for it, if not those it defines (folding's).
     index_only: Option<&'d [Vec<u8>]>,
-    /// Made by folding.
-    synthesized: bool,
+}
+
+impl<'d> Final<'d> {
+    fn bytes(&self) -> output::Bytes<'d> {
+        output::Bytes {
+            data: self.data,
+            holes: self.holes,
+        }
+    }
 }
 
 impl Final<'_> {

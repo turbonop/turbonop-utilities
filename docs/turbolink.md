@@ -202,10 +202,11 @@ lists every COFF group with its address and size) and by experiment:
   the same array with a port of the UCRT's `qsort`.
 - **The Rich header** (link.exe's `CbBuildProdidBlock`): link.exe's own
   entry (0x102, build 37029) first in a list to whose front each new
-  `@comp.id` goes, walking the command line's objects in order, then each
-  library's members from the last in the archive to the first (link.exe
-  makes a library's modules in the order of their offsets, each put at
-  the front of its list: its `/VERBOSE` pass 2 lists them so). An import
+  `@comp.id` goes, walking the command line's objects from the last to
+  the first, then each library's members from the last in the archive to
+  the first (link.exe makes the command line's modules in order and a
+  library's in the order of their offsets, each put at the front of its
+  list: its `/VERBOSE` pass 2 lists them so). An import
   object is 0x00010000, an object without a `@comp.id` 0. The checksum is the stub's length, its bytes
   rotated left by their offsets (`e_lfanew` zero), and each entry's ID
   rotated left by its count; then `(checksum >> 5) % 3 + 1` empty
@@ -236,7 +237,14 @@ lists every COFF group with its address and size) and by experiment:
   function not otherwise there with metadata flag 2, export suppressed),
   `.giats` (address-taken imports' slots, from `.giats$y`), `.gljmp`
   (long-jump targets, from `.gljmp$y`), and with `/GUARD:EHCONT`
-  `.gehcont`. Each is its targets' RVAs, ascending, each once; the
+  `.gehcont`. An object not compiled with `/guard:cf` (`@feat.00`
+  without 0x800) lists nothing, so every function one of its `REL32` or
+  `ADDR64` relocations refers to is in the function table, calls
+  included, an import's thunk too; the function as its definition is
+  typed (0x20, in a code section: a reference's type doesn't count), and
+  not for `ADDR32NB` (unwind data's), `REL32_1` to `_5`, `SECREL`,
+  `SECTION` or `SREL32` (link.exe rejects `ADDR32` with `/GUARD`, and
+  crashes on `TOKEN`). Each is its targets' RVAs, ascending, each once; the
   function table's entries take a metadata byte (5 bytes, stride 1 in
   `__guard_flags`' top nibble) once any has one. Every function in the
   table starts on 16 bytes (an import thunk, packed otherwise, too).

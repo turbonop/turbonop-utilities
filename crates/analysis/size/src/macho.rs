@@ -831,6 +831,7 @@ pub fn maps_with_debug(
         out.push((source, map));
     }
     Ok(Maps {
+        crate_hints: Default::default(),
         labels: b.labels,
         base,
         sources: out,

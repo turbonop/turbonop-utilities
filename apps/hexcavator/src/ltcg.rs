@@ -22,13 +22,21 @@ options:
   -sources      the source files, with their checksums (default)
   -directives   the linker directives (default)
   -symbols      the functions and variables (default)
-  -publics      of those, only the public definitions
+  -publics      of those, only the public definitions lib.exe lists in a
+                library's index (inline functions only if something
+                emitted refers to them)
+  -records      the other records: sections, namespaces, named types,
+                constants, attributes
   -refs         what each function refers to: what it calls (directly or
-                virtually), reads or writes, and takes the address of
+                virtually), reads or writes, and takes the address of; and
+                what each variable's initializer refers to
+  -locals       each function's scopes and local symbols (.cil$sy)
+  -init         the variables' initial values (.cil$in)
   -types        the CodeView type and id records
   -all          everything above
 
-Without options, everything but -types and -publics.";
+Without options, everything but -types, -publics, -records, -locals,
+and -init.";
 
 #[derive(Default, Clone, Copy)]
 struct Options {
@@ -40,6 +48,9 @@ struct Options {
     publics: bool,
     types: bool,
     refs: bool,
+    records: bool,
+    locals: bool,
+    init: bool,
 }
 
 pub fn run(args: &[String]) -> ExitCode {
@@ -56,6 +67,9 @@ pub fn run(args: &[String]) -> ExitCode {
             "publics" => o.publics = true,
             "types" => o.types = true,
             "refs" => o.refs = true,
+            "records" => o.records = true,
+            "locals" => o.locals = true,
+            "init" => o.init = true,
             "all" => {
                 o = Options {
                     headers: true,
@@ -66,6 +80,9 @@ pub fn run(args: &[String]) -> ExitCode {
                     publics: false,
                     types: true,
                     refs: true,
+                    records: true,
+                    locals: true,
+                    init: true,
                 }
             }
             "h" | "help" => return crate::out::print(format!("{USAGE}\n").as_bytes()),
@@ -86,7 +103,10 @@ pub fn run(args: &[String]) -> ExitCode {
         || o.symbols
         || o.publics
         || o.types
-        || o.refs)
+        || o.refs
+        || o.records
+        || o.locals
+        || o.init)
     {
         o = Options {
             headers: true,
@@ -94,9 +114,7 @@ pub fn run(args: &[String]) -> ExitCode {
             sources: true,
             directives: true,
             symbols: true,
-            publics: false,
-            types: false,
-            refs: false,
+            ..Options::default()
         };
     }
     let mut out = io::BufWriter::new(crate::out::stdout());
@@ -256,7 +274,15 @@ fn dump_object(
         }
         writeln!(out)?;
     }
-    let need_globals = o.sources || o.directives || o.symbols || o.publics || o.refs;
+    let need_globals = o.headers
+        || o.sources
+        || o.directives
+        || o.symbols
+        || o.publics
+        || o.refs
+        || o.records
+        || o.locals
+        || o.init;
     let globals = if need_globals {
         match obj.globals() {
             Ok(g) => Some(g),
@@ -265,6 +291,30 @@ fn dump_object(
     } else {
         None
     };
+    let locals = obj.locals().ok();
+    let units = obj.il_units();
+    if o.headers
+        && let Some(g) = &globals
+    {
+        match g.walked {
+            Ok(()) => writeln!(
+                out,
+                "  Records          {} (every one walked)",
+                g.spans.len()
+            )?,
+            Err(at) => writeln!(
+                out,
+                "  Records          {} walked; one not understood at {at:#x} (the rest found by their heads)",
+                g.spans.len()
+            )?,
+        }
+        let with_record = g.symbols.iter().filter(|x| x.il.is_some()).count();
+        writeln!(
+            out,
+            "  IL units         {} ({with_record} with a record; the rest functions nothing refers to)\n",
+            units.len()
+        )?;
+    }
     if let Some(g) = &globals {
         if o.sources {
             writeln!(out, "  Source files ({})", g.source_files.len())?;
@@ -293,26 +343,23 @@ fn dump_object(
             writeln!(out)?;
         }
         if o.symbols || o.publics {
-            let list: Vec<_> = g
-                .symbols
-                .iter()
-                .filter(|x| !o.publics || o.symbols || x.storage().is_public_definition())
-                .collect();
+            let listed = g.lib_listed();
+            let shown = |i: usize| !o.publics || o.symbols || listed[i];
+            let count = (0..g.symbols.len()).filter(|&i| shown(i)).count();
             let what = if o.publics && !o.symbols {
-                "Public definitions"
+                "Public definitions (as lib.exe lists them)"
             } else {
                 "Symbols"
             };
-            writeln!(out, "  {what} ({})", list.len())?;
+            writeln!(out, "  {what} ({count})")?;
             writeln!(
                 out,
                 "    {:>6}  {:<8}  {:<9}  {:>6}  flags  {:<20}  name",
                 "id", "kind", "storage", "size", "attributes"
             )?;
-            let il = obj.stream(b".cil$ex").map_or(0, <[u8]>::len);
-            let sizes = g.il_sizes(il);
+            let sizes = il_sizes(&obj, g, &units, locals.as_ref());
             for (i, x) in g.symbols.iter().enumerate() {
-                if !o.publics || o.symbols || x.storage().is_public_definition() {
+                if shown(i) {
                     symbol_line(out, x, sizes[i])?;
                 }
             }
@@ -320,6 +367,21 @@ fn dump_object(
         }
         if o.refs {
             refs(out, g)?;
+        }
+        if o.records {
+            records(out, g)?;
+        }
+    }
+    if o.locals {
+        match obj.locals() {
+            Ok(l) => locals_dump(out, &l, globals.as_ref(), &units)?,
+            Err(e) => return Ok(Err(e.to_string())),
+        }
+    }
+    if o.init {
+        match obj.initializers() {
+            Ok(i) => init_dump(out, &i, globals.as_ref())?,
+            Err(e) => return Ok(Err(e.to_string())),
         }
     }
     if o.types {
@@ -331,15 +393,257 @@ fn dump_object(
     Ok(Ok(()))
 }
 
+/// Each function's IL size: its unit's, if the units agree with
+/// `.cil$sy`; else from its offset to the next record's.
+pub(crate) fn il_sizes(
+    obj: &LtcgObject<'_>,
+    g: &ltcg::Globals<'_>,
+    units: &ltcg::IlUnits,
+    locals: Option<&ltcg::Locals<'_>>,
+) -> Vec<Option<u32>> {
+    if locals.is_some_and(|l| units.agrees_with(l)) {
+        g.symbols
+            .iter()
+            .map(|x| units.size_at(x.il?.il_offset))
+            .collect()
+    } else {
+        g.il_sizes(obj.stream(b".cil$ex").map_or(0, <[u8]>::len))
+    }
+}
+
+/// A symbol's name by its id, if it has a record.
+fn name_of(g: Option<&ltcg::Globals<'_>>, id: u32) -> String {
+    g.and_then(|g| {
+        g.symbols
+            .iter()
+            .find(|x| x.id == id)
+            .map(|x| x.name)
+            .or_else(|| g.constants.iter().find(|x| x.id == id).map(|x| x.name))
+    })
+    .map_or_else(|| format!("symbol {id:X}"), |n| s(n).into_owned())
+}
+
+fn hex_bytes(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// The other records: sections, namespaces, named types, constants,
+/// attributes.
+fn records(out: &mut dyn Write, g: &ltcg::Globals<'_>) -> io::Result<()> {
+    writeln!(out, "  Sections ({})", g.sections.len())?;
+    for x in &g.sections {
+        writeln!(
+            out,
+            "    {:>6X}  {:<12} {:<6} flags {:02X}  characteristics {:08X}",
+            x.id,
+            s(x.name),
+            s(x.class),
+            x.flags,
+            x.characteristics
+        )?;
+    }
+    writeln!(out, "\n  Namespaces ({})", g.namespaces.len())?;
+    for x in &g.namespaces {
+        writeln!(out, "    {}", s(x.name))?;
+    }
+    writeln!(out, "\n  Named types ({})", g.types.len())?;
+    for x in &g.types {
+        writeln!(
+            out,
+            "    {:>6X}  {:#06x}  {}",
+            x.id,
+            x.type_index,
+            s(x.name)
+        )?;
+    }
+    writeln!(out, "\n  Constants ({})", g.constants.len())?;
+    for x in &g.constants {
+        let value = x
+            .integer()
+            .map_or_else(|| hex_bytes(x.value), |v| v.to_string());
+        writeln!(out, "    {:>6X}  {value:<12} {}", x.id, s(x.name))?;
+    }
+    writeln!(out, "\n  Attributes ({})", g.attributes.len())?;
+    for x in &g.attributes {
+        let scope = if x.scope.is_empty() {
+            String::new()
+        } else {
+            format!("{}::", s(x.scope))
+        };
+        let args: Vec<String> = x
+            .args
+            .iter()
+            .map(|(_, a)| format!("\"{}\"", s(a)))
+            .collect();
+        let args = if args.is_empty() {
+            String::new()
+        } else {
+            format!("({})", args.join(", "))
+        };
+        let users: Vec<String> = g
+            .symbols
+            .iter()
+            .filter(|y| y.traits.attribute_ids.iter().any(|a| a == x.id))
+            .map(|y| s(y.name).into_owned())
+            .collect();
+        writeln!(
+            out,
+            "    {:>6X}  [[{scope}{}{args}]]  {}",
+            x.id,
+            s(x.name),
+            users.join(" ")
+        )?;
+    }
+    writeln!(out)
+}
+
+/// Each function's scopes and locals (`.cil$sy`).
+fn locals_dump(
+    out: &mut dyn Write,
+    l: &ltcg::Locals<'_>,
+    g: Option<&ltcg::Globals<'_>>,
+    units: &ltcg::IlUnits,
+) -> io::Result<()> {
+    use ltcg::{LocalItem, LocalKind};
+    let owner = |offset: usize| -> String {
+        g.and_then(|g| {
+            g.symbols
+                .iter()
+                .find(|x| x.il.is_some_and(|il| il.symbols_offset as usize == offset))
+        })
+        .map_or_else(
+            || "(no record: a function nothing refers to)".to_string(),
+            |x| s(x.name).into_owned(),
+        )
+    };
+    let note = match l.walked {
+        Ok(()) => String::new(),
+        Err(at) => format!("; a record not understood at {at:#x}"),
+    };
+    writeln!(
+        out,
+        "  Local symbols ({} functions{note})",
+        l.functions.len()
+    )?;
+    for (k, f) in l.functions.iter().enumerate() {
+        let il = units
+            .range(k)
+            .map(|(a, b)| format!(", IL at {a:X}, {:X} bytes", b - a))
+            .unwrap_or_default();
+        writeln!(out, "    {}{il}", owner(f.offset))?;
+        for i in &f.items {
+            match i {
+                LocalItem::Scope(x) if !x.name.is_empty() => {
+                    writeln!(out, "      label {}", s(x.name))?;
+                }
+                LocalItem::Scope(x) => {
+                    writeln!(out, "      scope {:X} (kind {:#x})", x.id, x.kind)?;
+                }
+                LocalItem::Begin(_) => {}
+                LocalItem::Local(x) => match x.kind {
+                    LocalKind::Variable {
+                        class,
+                        size,
+                        type_index,
+                        ..
+                    } => writeln!(
+                        out,
+                        "      {} {} ({size} bytes, type {type_index:#x}, scope {})",
+                        if class == 3 { "parameter" } else { "local" },
+                        s(x.name),
+                        x.scope
+                    )?,
+                    LocalKind::Unnamed {
+                        size, type_index, ..
+                    } => writeln!(
+                        out,
+                        "      temporary ({size} bytes, type {type_index:#x}, scope {})",
+                        x.scope
+                    )?,
+                    LocalKind::Static { size, global, .. } => writeln!(
+                        out,
+                        "      static {} ({size} bytes, global {global:X})",
+                        s(x.name)
+                    )?,
+                },
+                LocalItem::Type(x) => writeln!(out, "      type {}", s(x.name))?,
+                LocalItem::Constant(x) => writeln!(out, "      constant {}", s(x.name))?,
+            }
+        }
+    }
+    writeln!(out)
+}
+
+/// The variables' initial values (`.cil$in`).
+fn init_dump(
+    out: &mut dyn Write,
+    i: &ltcg::Initializers<'_>,
+    g: Option<&ltcg::Globals<'_>>,
+) -> io::Result<()> {
+    use ltcg::InitItem;
+    let note = match i.walked {
+        Ok(()) => String::new(),
+        Err(at) => format!("; an item not understood at {at:#x}"),
+    };
+    writeln!(out, "  Initializers ({}{note})", i.list.len())?;
+    for x in &i.list {
+        writeln!(out, "    {} ({} bytes)", name_of(g, x.id), x.size())?;
+        for item in &x.items {
+            match *item {
+                InitItem::Integer { size, .. } => writeln!(
+                    out,
+                    "      integer {size}: {:#x}",
+                    item.integer().unwrap_or(0)
+                )?,
+                InitItem::Float { size, bytes } => {
+                    writeln!(out, "      float {size}: {}", hex_bytes(bytes))?;
+                }
+                InitItem::Address {
+                    target,
+                    addend,
+                    size,
+                } => writeln!(
+                    out,
+                    "      address {size}: {} + {addend:#x}",
+                    name_of(g, target)
+                )?,
+                InitItem::ImageRelative {
+                    target,
+                    addend,
+                    size,
+                } => writeln!(
+                    out,
+                    "      image-relative {size}: {} + {addend:#x}",
+                    name_of(g, target)
+                )?,
+                InitItem::Bytes(b) => {
+                    let text = b.strip_suffix(b"\0").unwrap_or(b);
+                    if text.iter().all(|c| (0x20..0x7F).contains(c)) {
+                        writeln!(out, "      bytes {}: {:?}", b.len(), s(text))?;
+                    } else {
+                        writeln!(out, "      bytes {}: {}", b.len(), hex_bytes(b))?;
+                    }
+                }
+                InitItem::Zeros(n) => writeln!(out, "      zeros {n}")?,
+            }
+        }
+    }
+    writeln!(out)
+}
+
 /// What each function refers to, by name: calls, and uses.
 fn refs(out: &mut dyn Write, g: &ltcg::Globals<'_>) -> io::Result<()> {
     let by_id: std::collections::HashMap<u32, &ltcg::IlSymbol<'_>> =
         g.symbols.iter().map(|x| (x.id, x)).collect();
-    let with: Vec<_> = g.symbols.iter().filter(|x| x.il.is_some()).collect();
-    writeln!(out, "  References ({} functions)", with.len())?;
+    let with: Vec<_> = g
+        .symbols
+        .iter()
+        .filter(|x| x.il.is_some() || !x.data_refs.is_empty())
+        .collect();
+    writeln!(out, "  References ({} functions and variables)", with.len())?;
     for x in with {
         writeln!(out, "    {}", s(x.name))?;
-        for (id, kind) in x.il.iter().flat_map(ltcg::FunctionIl::refs) {
+        for (id, kind) in x.refs().iter() {
             let target = by_id.get(&id);
             let function = target.is_some_and(|t| matches!(t.kind, SymbolKind::Function { .. }));
             let how = match kind {

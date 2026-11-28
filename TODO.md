@@ -328,16 +328,26 @@ disassembly, `size` with its findings, and the extension's pages.
 
 ## LTCG objects
 
-- **The rest of the IL's records.** A function with a body is read
-  whole (its IL's place and size, its types, what it refers to and
-  how); other records (declared functions, variables, the kinds of
-  record between them) are still found by their heads, and the byte
-  that grows with a body isn't known. With every record walked, `hexcavator
-  size` could weigh a `/GL` library's functions, and the public
-  definitions could be told from inline functions nothing refers to,
-  as lib.exe tells them.
-- **The other IL sections.** `.cil$ex` (each function's IL), `.cil$sy`
-  (its locals), and `.cil$in`: their contents.
+- **`hexcavator size` for `/GL` objects and libraries.** Every record is
+  walked now (docs/ltcg-il.md), so a function can be weighed: its
+  `.cil$gl` record, its `.cil$ex` unit, its `.cil$sy` stream; a
+  variable: its record and its `.cil$in` initializer; units with no
+  record (functions nothing refers to) as one bucket. Needed: an LTCG
+  unit in turbonop-size's `objects.rs` (base map by IL section, the
+  symbols source charging those ranges; today a `/GL` member is
+  `[Unparsed Member]` and a lone `/GL` object is refused), and
+  `is_object_input` taking LTCG objects; tests against testdata/ltcg-il
+  (`records.lib`). A draft exists but was not finished or tested.
+- **turbolib's `/GL` index from the reader's rule.** `Globals::lib_listed`
+  reproduces lib.exe's index exactly (443 objects, three architectures);
+  turbolib's `ltcg_symbols` (apps/turbolib/src/msvc/library.rs) still uses
+  its own heuristic (virtual members by demangling, data not referred to
+  by inline functions) and could use it.
+- **The IL, what isn't known** (docs/ltcg-il.md, "Not known"): the
+  bytecode in `.cil$ex` (units are found by their opening, checked against
+  `.cil$sy`'s count; decoding the operations would make that exact and
+  give each function's calls and sizes), `.cil$gl`'s header and its 0x18
+  records, `.cil$db` past its id lists, and the flag bits marked not known.
 - **The back end's interface, the rest** (docs/turbolink-c2.md): the
   back-end switches each link option produces (the probe over a matrix
   of options), `CodeGen6`'s outputs, the second root list's rule,

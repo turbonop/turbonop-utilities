@@ -1,0 +1,32 @@
+
+Dump of file records-c.tmp.lib
+
+File Type: LIBRARY
+
+Archive member name at 11A: /               
+FFFFFFFFFFFFFFFF time/date
+         uid
+         gid
+       0 mode
+      C3 size
+correct header end
+
+    1 offsets
+
+        1      21A
+
+    13 public symbols
+
+        1 ??_C@_03IJDNBOJF@two@
+        1 ??_C@_03OHDNLOHO@one@
+        1 ?value@?1??storage@@9@9
+        1 c_main
+        1 cdecl_fn
+        1 fast_fn
+        1 names
+        1 origin
+        1 per_thread
+        1 std_fn
+        1 storage
+        1 tentative
+        1 tentative_array

@@ -286,3 +286,196 @@ fn function_bodies_tile_the_il() {
     assert_eq!(params(b"?callee_pops@@YAHHH@Z"), 2);
     assert_eq!(params(b"??1Shape@@UEAA@XZ"), 1);
 }
+
+/// testdata/ltcg-il: tools/ltcg-il/records.cpp and records.c (see its
+/// build.cmd), for x64, ARM64, and x86.
+fn il_fixtures() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/ltcg-il")
+}
+
+const IL_OBJECTS: [&str; 4] = [
+    "records.obj",
+    "records-a64.obj",
+    "records-c.obj",
+    "records-x86.obj",
+];
+
+fn il_hexcavator(args: &[&str]) -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .args(args)
+        .current_dir(il_fixtures())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// Every record of every section is walked, `.cil$ex`'s units agree with
+/// `.cil$sy`'s streams, and each function's record names its unit and its
+/// stream.
+#[test]
+fn il_sections_walked_whole() {
+    for name in IL_OBJECTS
+        .into_iter()
+        .chain(["../coff/ltcg.obj", "../coff/ltcg-x86.obj"])
+    {
+        let data = std::fs::read(il_fixtures().join(name)).unwrap();
+        let obj = turbonop_pe::ltcg::LtcgObject::parse(&data).unwrap();
+        let g = obj.globals().unwrap();
+        assert_eq!(g.walked, Ok(()), "{name}");
+        let locals = obj.locals().unwrap();
+        assert_eq!(locals.walked, Ok(()), "{name}");
+        assert_eq!(obj.initializers().unwrap().walked, Ok(()), "{name}");
+        let units = obj.il_units();
+        assert!(units.agrees_with(&locals), "{name}");
+        let mut bodies = 0;
+        for s in &g.symbols {
+            if let Some(il) = s.il {
+                let k = units.index_of(il.il_offset).unwrap();
+                assert_eq!(locals.functions[k].offset, il.symbols_offset as usize);
+                bodies += 1;
+            }
+        }
+        // Functions nothing refers to keep their IL, but no record (the
+        // C++ sources have some).
+        assert!(units.len() >= bodies, "{name}");
+        if name.ends_with("records.obj") || name.ends_with("a64.obj") || name.ends_with("/ltcg.obj") {
+            assert!(units.len() > bodies, "{name}");
+        }
+        // The spans tile the table after its header.
+        let mut at = 30;
+        for &(start, end, _) in &g.spans {
+            assert_eq!(start, at, "{name}");
+            at = end;
+        }
+        assert_eq!(at, obj.stream(b".cil$gl").unwrap().len());
+    }
+}
+
+/// The public definitions are exactly what lib.exe lists (inline functions
+/// only if something emitted refers to them), for each architecture.
+#[test]
+fn il_publics_are_libs_index() {
+    for name in IL_OBJECTS {
+        let text = il_hexcavator(&["ltcg", "-publics", name]);
+        let ours: BTreeSet<String> = text
+            .lines()
+            .filter(|l| l.contains("  function  ") || l.contains("  data  "))
+            .map(|l| l[70..].split(" (").next().unwrap().to_string())
+            .collect();
+        let index =
+            std::fs::read_to_string(il_fixtures().join(name.replace(".obj", ".linkermember.txt")))
+                .unwrap();
+        let list = index.split("public symbols").nth(1).unwrap();
+        let theirs: BTreeSet<String> = list
+            .lines()
+            .map(str::trim)
+            .skip_while(|l| l.is_empty())
+            .take_while(|l| !l.is_empty())
+            .map(|l| l.split_whitespace().nth(1).unwrap().to_string())
+            // (x86 C names: lib.exe decorates them; the IL doesn't.)
+            .map(|n| {
+                if name.contains("x86") && !n.starts_with('?') {
+                    n.trim_start_matches(['_', '@']).to_string()
+                } else {
+                    n
+                }
+            })
+            .collect();
+        assert!(theirs.len() > 5, "{name}");
+        assert_eq!(ours, theirs, "{name}");
+    }
+    let text = il_hexcavator(&["ltcg", "-symbols", "records.obj"]);
+    assert!(!text.contains("unused_"), "{text}");
+}
+
+/// The other records: sections, namespaces, named types, constants, and
+/// attributes with what they apply to.
+#[test]
+fn il_records() {
+    let text = il_hexcavator(&["ltcg", "-records", "records.obj"]);
+    for want in [
+        ".mine               flags 01  characteristics C0000040",
+        ".CRT$XCU     DATA",
+        "\n    geometry\n",
+        "  geometry::Square\n",
+        "70000        ?limit@@3HB",
+        "[[deprecated(\"use checked\")]]  ?old_way@@YAHH@Z",
+        "[[nodiscard]]  ?checked@@YAHH@Z",
+        "[[noreturn]]  ?fail@@YAXPEBD@Z",
+    ] {
+        assert!(text.contains(want), "{want}: {text}");
+    }
+}
+
+/// A function's scopes and locals, and the variables' initializers.
+#[test]
+fn il_locals_and_initializers() {
+    let text = il_hexcavator(&["ltcg", "-locals", "records.obj"]);
+    let at = text.find("?locals@@YAHHH@Z, IL at").unwrap();
+    let f: Vec<&str> = text[at..]
+        .lines()
+        .skip(1)
+        .take_while(|l| l.starts_with("      "))
+        .map(str::trim)
+        .collect();
+    for want in [
+        "label done",
+        "parameter a (4 bytes, type 0x74, scope 1)",
+        "parameter b (4 bytes, type 0x74, scope 1)",
+        "local sum (4 bytes, type 0x74, scope 2)",
+        "static ?calls@?1??locals@@YAHHH@Z@4HA (4 bytes, global 677)",
+    ] {
+        assert!(f.contains(&want), "{want}: {f:#?}");
+    }
+    assert!(f.iter().any(|l| l.starts_with("local inner ")), "{f:#?}");
+    let text = il_hexcavator(&["ltcg", "-init", "records.obj"]);
+    for want in [
+        "    ?counter@@3HA (4 bytes)\n      integer 4: 0x5\n",
+        "    ?hidden@@3PAHA (160 bytes)\n      integer 4: 0x1\n      integer 4: 0x2\n      integer 4: 0x3\n      zeros 148\n",
+        "    ?pointer_to@@3PEAHEA (8 bytes)\n      address 8: ?counter@@3HA + 0x0\n",
+        "    ?big_value@@3_JA (8 bytes)\n      integer 8: 0x123456789ab\n",
+        "    ?ratio@@3NA (8 bytes)\n      float 8: 000000000000f83f\n",
+        "    ?pair@@3UPair@@A (16 bytes)\n      integer 1: 0x1\n      zeros 3\n      integer 4: 0x2\n      integer 8: 0x3\n",
+        "    ?limit@@3HB (4 bytes)\n      integer 4: 0x11170\n",
+        "address 8: ??__Eglobal@@YAXXZ + 0x0",
+    ] {
+        assert!(text.contains(want), "{want}: {text}");
+    }
+}
+
+/// Damaged objects: every section cut short or a byte changed, read
+/// without a panic.
+#[test]
+fn il_hostile() {
+    let data = std::fs::read(il_fixtures().join("records.obj")).unwrap();
+    let obj = turbonop_pe::ltcg::LtcgObject::parse(&data).unwrap();
+    for name in [&b".cil$gl"[..], b".cil$sy", b".cil$in", b".cil$ex"] {
+        let s = obj.stream(name).unwrap();
+        let mut m = s.to_vec();
+        for i in (0..s.len()).step_by(3) {
+            for v in [0x00, 0x80, 0xFF] {
+                m[i] = v;
+                let _ = turbonop_pe::ltcg::Globals::parse(&m).map(|g| g.lib_listed());
+                let _ = turbonop_pe::ltcg::Locals::parse(&m);
+                let _ = turbonop_pe::ltcg::Initializers::parse(&m);
+                let _ = turbonop_pe::ltcg::IlUnits::find(&m);
+            }
+            m[i] = s[i];
+            let _ = turbonop_pe::ltcg::Globals::parse(&s[..i]);
+            let _ = turbonop_pe::ltcg::Locals::parse(&s[..i]);
+            let _ = turbonop_pe::ltcg::Initializers::parse(&s[..i]);
+        }
+    }
+    for n in (0..data.len()).step_by(97) {
+        if let Ok(o) = turbonop_pe::ltcg::LtcgObject::parse(&data[..n]) {
+            let _ = o.globals();
+            let _ = o.locals();
+            let _ = o.initializers();
+        }
+    }
+}

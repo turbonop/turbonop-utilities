@@ -1,0 +1,32 @@
+
+Dump of file records-x86.tmp.lib
+
+File Type: LIBRARY
+
+Archive member name at 128: /               
+FFFFFFFFFFFFFFFF time/date
+         uid
+         gid
+       0 mode
+      D1 size
+correct header end
+
+    1 offsets
+
+        1      236
+
+    13 public symbols
+
+        1 ??_C@_03IJDNBOJF@two@
+        1 ??_C@_03OHDNLOHO@one@
+        1 ?value@?1??storage@@9@9
+        1 @fast_fn@8
+        1 _c_main
+        1 _cdecl_fn
+        1 _names
+        1 _origin
+        1 _per_thread
+        1 _std_fn@8
+        1 _storage
+        1 _tentative
+        1 _tentative_array

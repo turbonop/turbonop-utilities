@@ -1,0 +1,55 @@
+
+Dump of file records-a64.tmp.lib
+
+File Type: LIBRARY
+
+Archive member name at 412: /               
+FFFFFFFFFFFFFFFF time/date
+         uid
+         gid
+       0 mode
+     38E size
+correct header end
+
+    1 offsets
+
+        1      7DC
+
+    36 public symbols
+
+        1 ??$twice@H@@YAHH@Z
+        1 ??$twice@J@@YAJJ@Z
+        1 ??0Shape@geometry@@QEAA@XZ
+        1 ??0Square@geometry@@QEAA@H@Z
+        1 ??1Shape@geometry@@UEAA@XZ
+        1 ??1Square@geometry@@UEAA@XZ
+        1 ??_7Shape@geometry@@6B@
+        1 ??_7Square@geometry@@6B@
+        1 ??_C@_05CJBACGMB@hello@
+        1 ??_C@_08JKGPMEKK@negative@
+        1 ??_GShape@geometry@@UEAAPEAXI@Z
+        1 ??_GSquare@geometry@@UEAAPEAXI@Z
+        1 ??_R0?AUShape@geometry@@@8
+        1 ??_R0?AUSquare@geometry@@@8
+        1 ??_R1A@?0A@EA@Shape@geometry@@8
+        1 ??_R1A@?0A@EA@Square@geometry@@8
+        1 ??_R2Shape@geometry@@8
+        1 ??_R2Square@geometry@@8
+        1 ??_R3Shape@geometry@@8
+        1 ??_R3Square@geometry@@8
+        1 ??_R4Shape@geometry@@6B@
+        1 ??_R4Square@geometry@@6B@
+        1 ?aligned_value@@3HA
+        1 ?area@Square@geometry@@UEBAHXZ
+        1 ?big_value@@3_JA
+        1 ?chosen@@3HA
+        1 ?counter@@3HA
+        1 ?global@@3UGlobal@@A
+        1 ?in_section@@3HA
+        1 ?locals@@YAHHH@Z
+        1 ?old_way@@YAHH@Z
+        1 ?pair@@3UPair@@A
+        1 ?pointer_to@@3PEAHEA
+        1 ?ratio@@3NA
+        1 ?used_inline@@YAHH@Z
+        1 exported

@@ -95,6 +95,10 @@ struct Reduced {
     unknown_records: Map<u16, u64>,
     unknown_subsections: Map<u32, u64>,
     contributions: Vec<ContributionKey>,
+    /// For each contribution holding a compiler temporary's name (`/RTC1`
+    /// data): its key and a hash of its bytes with the names' numbers and
+    /// the base-relocated fields left out.
+    temporaries: Vec<(ContributionKey, u128)>,
     /// The sizes of the linker's sections and COFF groups.
     layout: Vec<(Vec<u8>, u32)>,
     /// The `S_UDT` and `S_CONSTANT` records of the globals and of every
@@ -762,6 +766,27 @@ fn compare_rest(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
     }
     let mut left_b: Vec<&ContributionKey> = unpaired.into_values().flatten().collect();
     left_b.sort();
+    // Then those whose bytes differ only in compiler temporaries' names
+    // (another translation unit's copy of a function's `/RTC1` data).
+    let temps = |r: &Reduced| -> Map<ContributionKey, u128> { r.temporaries.iter().cloned().collect() };
+    let (ta, tb) = (temps(ra), temps(rb));
+    left_a.retain(|&c| {
+        let Some(h) = ta.get(c) else { return true };
+        match left_b
+            .iter()
+            .position(|d| (&d.0, d.1, d.2) == (&c.0, c.1, c.2) && tb.get(*d) == Some(h))
+        {
+            Some(k) => {
+                left_b.remove(k);
+                rep.expect(
+                    "section contributions whose bytes differ only in compiler temporaries' names (another translation unit's copy kept)",
+                    || show_contribution(c),
+                );
+                false
+            }
+            None => true,
+        }
+    });
     for (list, which) in [(left_a, "first"), (left_b, "second")] {
         for c in list {
             rep.fail(
@@ -1626,11 +1651,42 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
         if p.label_at(c.rva).is_some_and(|l| l.renamed) {
             continue;
         }
+        // (Nor those of the tables compared as tables: `.pdata`, say, whose
+        // contributions' sizes follow the functions each object kept.)
+        if p.in_tables(c.rva, c.size) {
+            continue;
+        }
         let section = p
             .section_of(c.rva)
             .map_or_else(Vec::new, |s| s.name.clone());
-        r.contributions
-            .push((section, c.characteristics, c.size, c.data_crc, c.reloc_crc));
+        let key = (section, c.characteristics, c.size, c.data_crc, c.reloc_crc);
+        if c.characteristics & 0x2000_0000 == 0 {
+            let data = p.bytes(c.rva, c.size);
+            if data.windows(2).any(|w| w == b"$S") {
+                let mut h = H128::new();
+                let relocs = p.relocations_in(c.rva, c.size);
+                let mut at = 0;
+                while at < data.len() {
+                    if let Some(&(_, size)) = relocs.iter().find(|r| r.0 - c.rva == at as u32) {
+                        at += usize::from(size);
+                        h.u64(u64::MAX);
+                        continue;
+                    }
+                    if let Some(n) = crate::image::bytes::temporary(&data, at) {
+                        h.bytes(b"$S#");
+                        at += n;
+                        while data.get(at) == Some(&0) {
+                            at += 1;
+                        }
+                        continue;
+                    }
+                    h.bytes(&data[at..at + 1]);
+                    at += 1;
+                }
+                r.temporaries.push((key.clone(), h.finish()));
+            }
+        }
+        r.contributions.push(key);
     }
     Ok(r)
 }

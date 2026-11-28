@@ -237,6 +237,17 @@ fn content(p: &Linked<'_>, c: &Contribution) -> Vec<u8> {
             r += 1;
             continue;
         }
+        // A compiler temporary's name in `/RTC1` data: its number is the
+        // translation unit's own.
+        if let Some(n) = bytes::temporary(&data, at) {
+            out.extend_from_slice(b"<$S#>");
+            at += n;
+            // (And the NULs padding it: its number's length varies.)
+            while data.get(at) == Some(&0) {
+                at += 1;
+            }
+            continue;
+        }
         if (c.rva as usize + at) & 3 == 0 && at + 4 <= data.len() && !text(&data[at..at + 4]) {
             let w = u32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]]);
             // Only a word naming the start of something: any small integer
@@ -394,14 +405,17 @@ fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
     let mut pairs = Vec::new();
     let mut lone_a = Vec::new();
     // (Contributions holding the linker's tables are compared as tables.)
+    // (And those that are wholly unwind information, compared function
+    // by function with the `.pdata` entries that name them.)
+    let (ua, ub) = (tables::unwind_ranges(a), tables::unwind_ranges(b));
     let mut paired_b: Vec<bool> = b
         .contributions
         .iter()
-        .map(|c| b.in_tables(c.rva, c.size))
+        .map(|c| b.in_tables(c.rva, c.size) || tables::covered(&ub, c.rva, c.size))
         .collect();
     let mut tables = 0;
     for (i, c) in a.contributions.iter().enumerate() {
-        if a.in_tables(c.rva, c.size) {
+        if a.in_tables(c.rva, c.size) || tables::covered(&ua, c.rva, c.size) {
             tables += 1;
             continue;
         }
@@ -449,7 +463,7 @@ fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
     for i in lone_a {
         let c = &a.contributions[i];
         rep.fail("functions or data only in the first program", || {
-            show(key(a, c).0)
+            format!("{} (RVA {:#x})", show(key(a, c).0), c.rva)
         });
     }
     for (j, c) in b.contributions.iter().enumerate() {
@@ -463,7 +477,9 @@ fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
                 || show(k),
             );
         } else {
-            rep.fail("functions or data only in the second program", || show(k));
+            rep.fail("functions or data only in the second program", || {
+                format!("{} (RVA {:#x})", show(k), c.rva)
+            });
         }
     }
     // Each pair, in parallel.
@@ -506,6 +522,7 @@ fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
         fields.absolute += f.absolute;
         fields.relative += f.relative;
         fields.inferred += f.inferred;
+        fields.temporaries += f.temporaries;
         compared += n;
     }
     rep.checked(
@@ -526,6 +543,12 @@ fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
         "image-relative words matched by name (inferred)",
         fields.inferred,
     );
+    if fields.temporaries > 0 {
+        rep.expect(
+            "names of compiler temporaries in /RTC1 data numbered otherwise (another translation unit's copy kept)",
+            || format!("{}", fields.temporaries),
+        );
+    }
     // What no contribution covers.
     let uncovered = |p: &Linked<'_>| {
         let covered: u64 = p.contributions.iter().map(|c| u64::from(c.size)).sum();

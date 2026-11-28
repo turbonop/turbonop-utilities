@@ -289,7 +289,16 @@ impl<'a> Linked<'a> {
         use turbonop_pe::consts::directory;
         use turbonop_pe::load_config::field;
         let mut out = Vec::new();
-        for d in [directory::EXPORT, directory::DEBUG, directory::DELAY_IMPORT] {
+        // (The exception directory's `.pdata` is compared function by
+        // function, with its unwind data; the base relocations by what
+        // they relocate.)
+        for d in [
+            directory::EXPORT,
+            directory::DEBUG,
+            directory::DELAY_IMPORT,
+            directory::EXCEPTION,
+            directory::BASERELOC,
+        ] {
             if let Some(dd) = self.pe.data_directory(d)
                 && dd.size.get() > 0
             {

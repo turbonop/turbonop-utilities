@@ -149,6 +149,23 @@ pub(crate) struct Fields {
     /// Thread-pointer offsets (x86-64 local-exec TLS) naming the same
     /// variable.
     pub tls: u64,
+    /// Names of compiler temporaries (`$S25`) in `/RTC1` data.
+    pub temporaries: u64,
+}
+
+/// The length (with its NUL) of a compiler temporary's name `$S<n>` at
+/// `at` in `data`, one that starts a string (at the start, or after a
+/// NUL).
+pub(crate) fn temporary(data: &[u8], at: usize) -> Option<usize> {
+    if at > 0 && data.get(at - 1) != Some(&0) {
+        return None;
+    }
+    let rest = data.get(at..)?;
+    if !rest.starts_with(b"$S") {
+        return None;
+    }
+    let digits = rest[2..].iter().take_while(|c| c.is_ascii_digit()).count();
+    (digits > 0 && rest.get(2 + digits) == Some(&0)).then_some(3 + digits)
 }
 
 fn word(b: &[u8], at: usize, size: usize) -> u64 {
@@ -283,6 +300,25 @@ pub(crate) fn compare<A: Names + ?Sized, B: Names + ?Sized>(
                 at = start + 4;
                 continue;
             }
+        }
+        // In data, the names MSVC's `/RTC1` gives compiler temporaries
+        // (`$S25`, in a frame's variable descriptions): numbered in each
+        // translation unit, so another unit's copy of a function names its
+        // own. Only the name's bytes, NUL-padded to the longer.
+        if isa == Isa::Data
+            && let Some(k) = (at.saturating_sub(7)..=at).find(|&k| {
+                temporary(a.bytes, k).is_some() && temporary(b.bytes, k).is_some()
+            })
+            && let (Some(na), Some(nb)) = (temporary(a.bytes, k), temporary(b.bytes, k))
+            && at < k + na.max(nb)
+            && (k + na.min(nb)..k + na.max(nb)).all(|j| {
+                j < len && (if na < nb { a.bytes[j] } else { b.bytes[j] }) == 0
+            })
+        {
+            masked[k..(k + na.max(nb)).min(len)].fill(true);
+            fields.temporaries += 1;
+            at = k + na.max(nb);
+            continue;
         }
         // In data, an RVA needn't be aligned: the C++ exception handler's
         // compressed tables (`__CxxFrameHandler4`'s) hold them at any byte.
@@ -787,6 +823,11 @@ fn indexes_soon(code: &[u8], va: u64, r: turbonop_x86::Register) -> bool {
         });
         if hit {
             return true;
+        }
+        // (Written before it's used: not the offset, `mov ecx, 1; rep
+        // stos`, say.)
+        if i.written_registers().contains(r) {
+            return false;
         }
         at += i.len().max(1);
         if at >= code.len() {

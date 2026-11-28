@@ -411,10 +411,15 @@ fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
     let mut paired_b: Vec<bool> = b
         .contributions
         .iter()
-        .map(|c| b.in_tables(c.rva, c.size) || tables::covered(&ub, c.rva, c.size))
+        .map(|c| c.size == 0 || b.in_tables(c.rva, c.size) || tables::covered(&ub, c.rva, c.size))
         .collect();
     let mut tables = 0;
     for (i, c) in a.contributions.iter().enumerate() {
+        // (lld-link lists empty contributions, at the address of what
+        // follows them: nothing to compare.)
+        if c.size == 0 {
+            continue;
+        }
         if a.in_tables(c.rva, c.size) || tables::covered(&ua, c.rva, c.size) {
             tables += 1;
             continue;

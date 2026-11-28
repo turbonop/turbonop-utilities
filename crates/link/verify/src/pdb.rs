@@ -321,11 +321,24 @@ fn names_type(path: &[u8], line: u32, name: &[u8]) -> bool {
     }
     parts.push((cur, true));
     let ident = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
-    parts.iter().filter(|p| p.1 && !p.0.is_empty()).any(|(p, _)| {
-        l.match_indices(p.as_str()).any(|(i, _)| {
-            !ident(l[..i].chars().next_back()) && !ident(l[i + p.len()..].chars().next())
+    parts
+        .iter()
+        .filter(|p| p.1 && !p.0.is_empty())
+        .any(|(p, _)| {
+            l.match_indices(p.as_str()).any(|(i, _)| {
+                !ident(l[..i].chars().next_back()) && !ident(l[i + p.len()..].chars().next())
+            })
         })
-    })
+}
+
+/// Whether `path` is a translation unit's own source (not a header): a
+/// class a macro defines there (`REGISTER_SET_FACTORY_WITH_PROGRAMSTATE`)
+/// has that unit's line.
+fn source_file(path: &[u8]) -> bool {
+    let name = file_name(path).to_ascii_lowercase();
+    [&b".cpp"[..], b".cc", b".cxx", b".c"]
+        .iter()
+        .any(|e| name.ends_with(e))
 }
 
 /// UDTs' source lines (`LF_UDT_MOD_SRC_LINE`), by the UDT's name:
@@ -372,14 +385,17 @@ fn compare_udt_lines(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
                 );
             }
             (Some(x), Some(y))
-                if x != y && x.iter().chain(y).all(|(f, l)| names_type(f, *l, n)) =>
+                if x != y
+                    && x.iter()
+                        .chain(y)
+                        .all(|(f, l)| names_type(f, *l, n) || source_file(f)) =>
             {
                 // Each translation unit gives a template's class the line
                 // it was instantiated from: its definition's, or an
                 // explicit instantiation's (`template class
                 // RegionBase<...>;`); the linker keeps the first it reads.
                 rep.expect(
-                    "UDTs whose source lines differ, each a line naming the type or a class template it is in (another translation unit's line kept)",
+                    "UDTs whose source lines differ, each a line naming the type or a class template it is in, or a translation unit's own source (another translation unit's line kept)",
                     || show(n),
                 );
             }
@@ -560,7 +576,7 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
                         by.sort_unstable();
                         if bx == by {
                             rep.expect(
-                                "procedures the same but for which definition of a class of a name they name (another translation unit's copy kept, whose classes list other implicit members)",
+                                "procedures the same but for which definition of a class of a name they name, and local typedefs (another translation unit's copy kept, whose classes list other implicit members)",
                                 || show(n),
                             );
                         } else {
@@ -587,9 +603,9 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
     fn mods(r: &Reduced) -> Map<Vec<u8>, Own<'_>> {
         let mut m: Map<Vec<u8>, Own<'_>> = Map::default();
         for (n, synthesized, h, d, t) in &r.modules {
-            let e = m
-                .entry(n.clone())
-                .or_insert((*synthesized, Vec::new(), Vec::new(), Vec::new()));
+            let e =
+                m.entry(n.clone())
+                    .or_insert((*synthesized, Vec::new(), Vec::new(), Vec::new()));
             e.2.push((h.as_slice(), d.as_slice()));
             let mut h = h.clone();
             h.sort_unstable();
@@ -650,7 +666,9 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
                                     .join("; ")
                             };
                             format!(
-                                ": {} and {} records; first only {}; second only {}", ha.len(), hb.len(),
+                                ": {} and {} records; first only {}; second only {}",
+                                ha.len(),
+                                hb.len(),
                                 only(ha, da, hb),
                                 only(hb, db, ha)
                             )
@@ -750,9 +768,7 @@ fn compare_rest(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
     let mut left_a = Vec::new();
     for &c in &only_a {
         let list = unpaired.entry((&c.0, c.1, c.2)).or_default();
-        let at = list
-            .iter()
-            .position(|&d| zero(d) || zero(c));
+        let at = list.iter().position(|&d| zero(d) || zero(c));
         match at {
             Some(k) => {
                 list.swap_remove(k);
@@ -768,7 +784,8 @@ fn compare_rest(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
     left_b.sort();
     // Then those whose bytes differ only in compiler temporaries' names
     // (another translation unit's copy of a function's `/RTC1` data).
-    let temps = |r: &Reduced| -> Map<ContributionKey, u128> { r.temporaries.iter().cloned().collect() };
+    let temps =
+        |r: &Reduced| -> Map<ContributionKey, u128> { r.temporaries.iter().cloned().collect() };
     let (ta, tb) = (temps(ra), temps(rb));
     left_a.retain(|&c| {
         let Some(h) = ta.get(c) else { return true };
@@ -1318,7 +1335,11 @@ fn module(
         if let Some((_, sh, th, nh, _)) = &mut scope {
             sh.u128(record);
             th.u128(tagless_record());
-            nh.u128(named_record());
+            // (A local typedef some translation units' copies list and
+            // others don't: `_Mypair` in `std::make_pair`.)
+            if s.kind != kind::S_UDT {
+                nh.u128(named_record());
+            }
             if opens_scope(s.kind) {
                 depth += 1;
             } else if closes_scope(s.kind) {
@@ -1423,7 +1444,8 @@ fn module(
                     show(&name),
                     first.code_size,
                     blocks.iter().map(|b| b.lines.len()).sum::<usize>(),
-                    cx.file(first.file).map_or_else(|| "?".into(), |f| show(file_name(f))),
+                    cx.file(first.file)
+                        .map_or_else(|| "?".into(), |f| show(file_name(f))),
                     first.lines.first().map_or(0, |l| l.line())
                 );
                 out.lines.push((name, h.finish(), end, desc));
@@ -1625,7 +1647,13 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
         r.layout.extend(m.layout);
         r.udts.extend(m.udts);
         r.pch |= m.synthesized && m.name.starts_with(b"turbolib-types-");
-        r.modules.push((m.name, m.synthesized, m.others, m.others_desc, m.others_tagless));
+        r.modules.push((
+            m.name,
+            m.synthesized,
+            m.others,
+            m.others_desc,
+            m.others_tagless,
+        ));
     }
     for (k, n) in unknown {
         *r.unknown_records.entry(k).or_insert(0) += n;

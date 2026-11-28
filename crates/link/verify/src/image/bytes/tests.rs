@@ -635,7 +635,15 @@ fn operands_outside_procedures_explain_only_what_words_dont() {
         v.extend((f + 0x8e8).to_le_bytes());
         v
     };
-    let (rep, f) = run(&a, 0x1000, &region(0x1000), &b, 0x2000, &region(0x2000), Isa::X64);
+    let (rep, f) = run(
+        &a,
+        0x1000,
+        &region(0x1000),
+        &b,
+        0x2000,
+        &region(0x2000),
+        Isa::X64,
+    );
     assert!(rep.passed(), "{}", rep.text());
     assert_eq!(f.inferred, 2);
 }
@@ -700,14 +708,38 @@ fn windows_tls_offsets_are_named_near_a_read_of_the_tls_array() {
         base: b,
         tls: vec![(0, b"other"), (8, b"threadIndex"), (0xc, b"Enabled")],
     };
-    let (rep, f) = run(&a, 0x1000, &msvc_tls(8, true), &b, 0x2000, &msvc_tls(0xc, true), Isa::X64);
+    let (rep, f) = run(
+        &a,
+        0x1000,
+        &msvc_tls(8, true),
+        &b,
+        0x2000,
+        &msvc_tls(0xc, true),
+        Isa::X64,
+    );
     assert!(rep.passed(), "{}", rep.text());
     assert_eq!(f.tls, 1);
     // Another variable.
-    let (rep, _) = run(&a, 0x1000, &msvc_tls(8, true), &b, 0x2000, &msvc_tls(8, true), Isa::X64);
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &msvc_tls(8, true),
+        &b,
+        0x2000,
+        &msvc_tls(8, true),
+        Isa::X64,
+    );
     assert!(!rep.passed(), "{}", rep.text());
     // No read of the TLS array: an integer, which differs.
-    let (rep, _) = run(&a, 0x1000, &msvc_tls(8, false), &b, 0x2000, &msvc_tls(0xc, false), Isa::X64);
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &msvc_tls(8, false),
+        &b,
+        0x2000,
+        &msvc_tls(0xc, false),
+        Isa::X64,
+    );
     assert!(
         rep.failed("functions or data whose bytes differ"),
         "{}",
@@ -725,9 +757,25 @@ fn unaligned_rvas_in_data_are_inferred() {
         v.extend([2, 4]);
         v
     };
-    let (rep, f) = run(&a, 0x8000, &table(0x1000), &b, 0x9000, &table(0x2000), Isa::Data);
+    let (rep, f) = run(
+        &a,
+        0x8000,
+        &table(0x1000),
+        &b,
+        0x9000,
+        &table(0x2000),
+        Isa::Data,
+    );
     assert!(rep.passed(), "{}", rep.text());
     assert_eq!(f.inferred, 1);
-    let (rep, _) = run(&a, 0x8000, &table(0x1000), &b, 0x9000, &table(0x2004), Isa::Data);
+    let (rep, _) = run(
+        &a,
+        0x8000,
+        &table(0x1000),
+        &b,
+        0x9000,
+        &table(0x2004),
+        Isa::Data,
+    );
     assert!(rep.failed("functions or data whose bytes differ"));
 }

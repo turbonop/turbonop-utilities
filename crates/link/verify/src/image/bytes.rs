@@ -306,14 +306,12 @@ pub(crate) fn compare<A: Names + ?Sized, B: Names + ?Sized>(
         // translation unit, so another unit's copy of a function names its
         // own. Only the name's bytes, NUL-padded to the longer.
         if isa == Isa::Data
-            && let Some(k) = (at.saturating_sub(7)..=at).find(|&k| {
-                temporary(a.bytes, k).is_some() && temporary(b.bytes, k).is_some()
-            })
+            && let Some(k) = (at.saturating_sub(7)..=at)
+                .find(|&k| temporary(a.bytes, k).is_some() && temporary(b.bytes, k).is_some())
             && let (Some(na), Some(nb)) = (temporary(a.bytes, k), temporary(b.bytes, k))
             && at < k + na.max(nb)
-            && (k + na.min(nb)..k + na.max(nb)).all(|j| {
-                j < len && (if na < nb { a.bytes[j] } else { b.bytes[j] }) == 0
-            })
+            && (k + na.min(nb)..k + na.max(nb))
+                .all(|j| j < len && (if na < nb { a.bytes[j] } else { b.bytes[j] }) == 0)
         {
             masked[k..(k + na.max(nb)).min(len)].fill(true);
             fields.temporaries += 1;
@@ -475,9 +473,7 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
         // Bytes outside a procedure that decode across the start of one
         // (data before it, read as an instruction) would put the decoding
         // of its code out of step: it starts at the procedure.
-        if !checked
-            && let Some(k) = (1..n).find(|&k| a.image.in_code(a.rva + (at + k) as u32))
-        {
+        if !checked && let Some(k) = (1..n).find(|&k| a.image.in_code(a.rva + (at + k) as u32)) {
             at += k;
             fs_loaded = None;
             block.clear();
@@ -1036,7 +1032,12 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
                         _ => break,
                     }
                 };
-                if check(i, ta.wrapping_add(oa as u64), tb.wrapping_add(ob as u64), checked) {
+                if check(
+                    i,
+                    ta.wrapping_add(oa as u64),
+                    tb.wrapping_add(ob as u64),
+                    checked,
+                ) {
                     mark(masked, i, mask);
                     mark(masked, j, ARM64_IMM12);
                 }

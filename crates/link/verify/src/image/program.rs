@@ -171,7 +171,10 @@ impl<'a> Linked<'a> {
         p.tls = p.pe.tls().and_then(|t| {
             let start = p.rva(t.start_of_raw_data.get())?.get();
             let end = p.rva(t.end_of_raw_data.get())?.get();
-            Some((start, end.checked_sub(start)?.saturating_add(t.size_of_zero_fill)))
+            Some((
+                start,
+                end.checked_sub(start)?.saturating_add(t.size_of_zero_fill),
+            ))
         });
         p.read_labels()?;
         Ok(p)

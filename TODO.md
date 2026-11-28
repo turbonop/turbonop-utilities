@@ -516,20 +516,23 @@ x64. Where the 3.5 MB went:
   - `/<ECSYMBOLS>/` in verify; C13 subsections other than lines and
     inlinees (frame data, cross-scope imports and exports) in
     compare-images.
-  - **No folded COFF link has yet compared equivalent.** The proof run
-    (`tools/turbolib/proof`: a from-scratch Debug /Z7 LLVM+clang+lld
-    build, its 205 changed libraries folded, all 205 passing `verify`;
-    `llvm-objdump.exe` relinked) still fails compare-images after
-    moved `/RTC1` data was named by content and MSVC's jump-table
-    displacements inferred (branch turbolib-proof): link.exe /OPT:REF 241
-    failures (from 3,500), lld-link /OPT:REF 37,481. Left to explain,
-    each by an image's bytes: code operands naming another offset of the
-    same function (`getMappingClassString`+0x2ac and +0x29b, lld-link);
-    single differing bytes (`optimizeInstFromVEX3ToVEX2`+0x1678, link.exe);
-    lld-link's 8,004 read-only contributions only in each program; line
-    blocks of `std::_Optional_construct_base` constructors; 123 to 138
-    procedures' symbols (lambdas); `S_GTHREAD32`/`S_LTHREAD32` globals;
-    `Parallel.cpp`'s `.data` CRC.
+  - **The proof run's relinks compare equivalent** (branch
+    turbolib-equiv; see the plan's "The tools" for the rules): llvm-objdump,
+    clang, lld, and opt, relinked against the 205 folded libraries of the
+    Debug /Z7 /RTC1 PCH build, link.exe /OPT:REF and NOREF, lld-link REF
+    and NOREF, FULL and GHASH. Every failure was compare-images's own, or
+    debug information of another translation unit's copy of a COMDAT
+    (the code identical); none was a difference in a program. Open:
+    - refold with the engine as of #88 (the relinks used libraries
+      folded before it) and compare again;
+    - which copy of a duplicate COMDAT a folded library makes the link
+      keep differs from the original link's when the copies' debug
+      information differs (another TU's lines for a compiler-generated
+      function, its classes' implicit members, lambdas' tags, `/RTC1`
+      temporaries' names): harmless to the program, visible in a
+      debugger. The synthesized member could hold the first definer's
+      copy where they differ, if that matches link.exe's pick often
+      enough to matter (measure).
   - The proof run's other parts, not yet done: the two turbolib builds
     (fold, fold+precomp) and their test suites against the baseline's;
     the baseline's `check-clang` (Debug clang ran 7.5 h without finishing:

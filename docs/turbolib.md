@@ -3331,7 +3331,16 @@ the synthesized member holds. Expected (each its own category):
 - procedures the same but for which definition of a class of a name they
   name (MSVC lists in a class's fields the special members a translation
   unit declares implicitly, so two translation units' definitions of one
-  class can differ);
+  class can differ), and for local typedefs one copy lists (`_Mypair` in
+  `std::make_pair`);
+- the names `/RTC1` gives compiler temporaries in a frame's variable
+  descriptions (`$S25`, numbered in each translation unit), in the
+  images' bytes and the contributions' CRCs;
+- a UDT's source lines, each a line that names the type or a class
+  template it is in, or a line of a translation unit's own source (an
+  explicit instantiation's `template class RegionBase<...>;`, a macro's
+  `REGISTER_SET_FACTORY_WITH_PROGRAMSTATE`): each unit gives the class
+  its own line, and the linker keeps the first it reads;
 - line blocks of one line for a whole function, at a translation unit's
   end (the line after its file's last, read from this machine's sources)
   in one PDB at least: MSVC gives a function the compiler generates that
@@ -3346,6 +3355,12 @@ the synthesized member holds. Expected (each its own category):
 Thunks (`S_THUNK32`, an adjustor's COMDAT) are compared as procedures, by
 name: they move with folding. A module's own records are compared as a
 multiset.
+
+Compared as tables, not as contributions: `.pdata` (function by function,
+with each one's unwind information) and the contributions wholly made of
+the unwind information it names (lld-link lists one per object), and
+`.reloc` (by what each address relocates). lld-link's empty contributions
+are skipped.
 
 What `compare-images` can prove: that the two images hold the same
 contributions, each with the same bytes once every address field it

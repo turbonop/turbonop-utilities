@@ -830,9 +830,7 @@ same but for the PDB's GUID, age, and name.
   objects (link.exe lists masm's entry, 0x103, before the compiler's,
   0x104, where turbolink lists them the other way round; seen with
   `start.obj` from ml64, then cl's objects). llvm-tblgen, llc, opt,
-  llvm-mc and llvm-ar are link.exe's images (`llvm-nm` and
-  `llvm-objdump` to check again: their delay-load room, which the old
-  0x104-or-0x108 rule got wrong, is now link.exe's measured rule).
+  llvm-mc, llvm-ar, llvm-nm and llvm-objdump are link.exe's images.
 - **Delay loading by archive member name:** link.exe matches
   `/DELAYLOAD` against an import's archive member name, not the DLL
   name in the import object. With x.dll's members renamed z.dll,

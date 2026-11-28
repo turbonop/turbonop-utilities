@@ -1151,6 +1151,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-isa"
+version = "0.0.7"
+dependencies = [
+ "turbonop-global-alloc",
+]
+
+[[package]]
 name = "turbonop-linker"
 version = "0.0.7"
 dependencies = [

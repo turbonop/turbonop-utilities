@@ -1319,11 +1319,17 @@ fn apply(c: &mut Config, name: &str, value: Option<&str>, arg: &Arg, d: &mut Vec
         "verbose" => c.verbose = true,
         "time" | "time+" => c.time = true,
         "ltcg" | "ltcgout" | "useprofile" | "genprofile" | "fastgenprofile" => {
-            if name == "ltcg" && value.is_some_and(|v| v.eq_ignore_ascii_case("off")) {
+            let v = value.map(str::to_ascii_lowercase);
+            if name == "ltcg" && v.as_deref() == Some("off") {
                 c.ltcg = false;
             } else {
                 c.ltcg = true;
-                d.push(Diagnostic::NotYet(arg.to_string()));
+                // (Plain LTCG is done; incremental LTCG and PGO aren't yet.)
+                let plain =
+                    name == "ltcg" && matches!(v.as_deref(), None | Some("status" | "nostatus"));
+                if !plain {
+                    d.push(Diagnostic::NotYet(arg.to_string()));
+                }
             }
         }
         "incremental" => match yes_no(value) {

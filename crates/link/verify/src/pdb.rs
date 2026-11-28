@@ -336,8 +336,14 @@ fn compare_udt_lines(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
 fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, rep: &mut Report) {
     // Publics.
     rep.checked("publics", ra.publics.len() as u64);
+    // (turbolib's own names on either side: the first program may be
+    // linked against a library folded before, as when a folded library
+    // is folded again.)
     multisets(
-        ra.publics.iter().map(|(h, d, _)| (*h, d.clone())),
+        ra.publics
+            .iter()
+            .filter(|p| !p.2)
+            .map(|(h, d, _)| (*h, d.clone())),
         rb.publics
             .iter()
             .filter(|p| !p.2)
@@ -345,7 +351,7 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
         "publics",
         rep,
     );
-    for (_, d, renamed) in &rb.publics {
+    for (_, d, renamed) in ra.publics.iter().chain(&rb.publics) {
         if *renamed {
             rep.expect(
                 "publics of turbolib's renamed copies, anchors, and PCH symbols",

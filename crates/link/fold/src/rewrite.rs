@@ -938,7 +938,32 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     }
 
     lap(2);
-    let name_of = |n: usize| format!("turbolib{n}.obj").into_bytes();
+    // `turbolib<n>-<the end of its anchor's hash>.obj`: a name no other
+    // library's synthesized members have, so that a library made of folded
+    // libraries (or lib.exe's combination of them) has no two members of
+    // one name, which is one too many (lib.exe replaces one with the other
+    // when it archives the library again with an object of that name).
+    // Should an input member have the name anyway, the next `n` is taken.
+    let names: Vec<Vec<u8>> = {
+        let taken: std::collections::HashSet<Vec<u8>> =
+            inputs.iter().map(|i| i.name.to_ascii_lowercase()).collect();
+        let mut k = 0usize;
+        (0..synths.len())
+            .map(|n| {
+                let tag = &anchors[n][anchors[n].len().saturating_sub(12)..];
+                loop {
+                    let mut name = format!("turbolib{k}-").into_bytes();
+                    name.extend_from_slice(tag);
+                    name.extend_from_slice(b".obj");
+                    k += 1;
+                    if !taken.contains(&name) {
+                        break name;
+                    }
+                }
+            })
+            .collect()
+    };
+    let name_of = |n: usize| names[n].clone();
     let synthesized = |n: usize, objects: Objects<'_, 'a>| {
         let name = name_of(n);
         let skeleton = synthesize(

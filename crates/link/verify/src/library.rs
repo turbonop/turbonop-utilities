@@ -376,6 +376,15 @@ struct Facts<'s> {
     original_names: Sharded<&'s [u8], ()>,
     /// The synthesized members that define each name.
     synthesized_definitions: Map<&'s [u8], Vec<usize>>,
+    /// turbolib's precompiled-types members in the rewritten library that
+    /// hold types alone (they define their PCH symbols and nothing else,
+    /// and have no side effects, so loading one resolves no other name),
+    /// by their PCH symbols.
+    types_members: Map<&'s [u8], usize>,
+    /// Each synthesized member's references (undefined and weak) but those
+    /// to renamed copies, PCH symbols, and anchors: under preserve, each
+    /// is a name every member anchoring it had.
+    foreign: Map<usize, Vec<&'s [u8]>>,
 }
 
 /// Findings made in parallel, to be reported in a fixed order: (the
@@ -557,6 +566,22 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
         original_units,
         original_names,
         synthesized_definitions: Map::default(),
+        types_members: r
+            .members
+            .iter()
+            .enumerate()
+            .filter_map(|(j, m)| {
+                let c = m.body.coff()?;
+                let types_alone = c.pch.is_some()
+                    && pch::names_turbolib_pch(&m.name)
+                    && !c.side_effects
+                    && !c.definitions.is_empty()
+                    && c.definitions.iter().all(|d| d.name.starts_with(PCH_SYMBOL));
+                types_alone.then(|| c.definitions.iter().map(move |d| (d.name, j)))
+            })
+            .flatten()
+            .collect(),
+        foreign: Map::default(),
     };
     for &j in &synthesized {
         let Some(c) = r.members[j].body.coff() else {
@@ -572,6 +597,15 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
                 .or_default()
                 .push(j);
         }
+        facts.foreign.insert(
+            j,
+            c.undefined
+                .iter()
+                .copied()
+                .chain(c.weak.iter().map(|w| w.name))
+                .filter(|n| !n.starts_with(RENAMED) && !n.starts_with(PCH_SYMBOL) && !is_anchor(n))
+                .collect(),
+        );
         for u in &c.units {
             facts.holders.entry(u.key).or_default().push(j);
             if options.fold == Fold::SelectAny && !u.local {
@@ -760,33 +794,26 @@ fn check_member(
     }
     let synthesized = anchored(rc, facts);
     // COMDATs kept and lost.
-    let kept: Set<(&[u8], u128)> = rc
-        .units
-        .iter()
-        .map(|u| (&*u.leader, u.fingerprint))
-        .collect();
-    let had: Set<(&[u8], u128)> = oc
-        .units
-        .iter()
-        .map(|u| (&*u.leader, u.fingerprint))
-        .collect();
+    let kept: Set<u128> = rc.units.iter().map(|u| u.id).collect();
+    let had: Set<u128> = oc.units.iter().map(|u| u.id).collect();
     for u in &rc.units {
-        if !had.contains(&(&*u.leader, u.fingerprint)) {
+        if !had.contains(&u.id) {
             rep.fail("COMDATs of original members changed or added", || {
-                format!("{}: {}", name(), show(&u.leader))
+                format!("{}: {}", name(), show(u.leader))
             });
         }
     }
-    let mut lost = Set::default();
+    // Each unit's leader lost (no unit of its name and fingerprint kept).
+    let mut lost_leaders: Set<&[u8]> = Set::default();
     for u in &oc.units {
-        if kept.contains(&(&*u.leader, u.fingerprint)) {
+        if kept.contains(&u.id) {
             continue;
         }
-        lost.insert(&*u.leader);
+        lost_leaders.insert(u.leader);
         rep.checked("COMDATs moved out of original members", 1);
         if u.selection == turbonop_coff::comdat_select::NODUPLICATES {
             rep.fail("strong (NODUPLICATES) COMDATs moved", || {
-                format!("{}: {}", name(), show(&u.leader))
+                format!("{}: {}", name(), show(u.leader))
             });
             continue;
         }
@@ -809,163 +836,149 @@ fn check_member(
                 if held {
                     rep.expect(
                         "moved COMDATs held as another copy of their name (--fold=select-any)",
-                        || format!("{}: {}", name(), show(&u.leader)),
+                        || format!("{}: {}", name(), show(u.leader)),
                     );
                 } else {
                     rep.fail(
                         "moved COMDATs that no anchored synthesized member holds, or another copy of whose name the selection allows (--fold=select-any)",
-                        || format!("{}: {}", name(), show(&u.leader)),
+                        || format!("{}: {}", name(), show(u.leader)),
                     );
                 }
             }
             None => rep.fail(
                 "moved COMDATs that no synthesized member holds (in their environment)",
-                || format!("{}: {}", name(), show(&u.leader)),
+                || format!("{}: {}", name(), show(u.leader)),
             ),
             Some(holders) => {
                 if !holders.iter().any(|h| synthesized.binary_search(h).is_ok()) {
                     rep.fail(
                         "moved COMDATs whose synthesized member the original member doesn't anchor",
-                        || format!("{}: {}", name(), show(&u.leader)),
+                        || format!("{}: {}", name(), show(u.leader)),
                     );
                 }
             }
         }
     }
-    // Definitions.
-    let lost_units: Set<u32> = oc
+    // Each unit lost, by its position (a unit whose leader's name is lost).
+    let lost_units: Vec<bool> = oc
         .units
         .iter()
-        .enumerate()
-        .filter(|(_, u)| lost.contains(&*u.leader))
-        .map(|(k, _)| k as u32)
+        .map(|u| lost_leaders.contains(u.leader))
         .collect();
-    let r_undefined: Set<&[u8]> = rc.undefined.iter().map(|n| &**n).collect();
-    let o_undefined: Set<&[u8]> = oc.undefined.iter().map(|n| &**n).collect();
-    let r_definitions: Map<&[u8], &member::Definition> =
-        rc.definitions.iter().map(|d| (&*d.name, d)).collect();
-    let o_definitions: Set<&[u8]> = oc.definitions.iter().map(|d| &*d.name).collect();
-    let r_weak: Map<&[u8], &member::Weak> = rc.weak.iter().map(|w| (&*w.name, w)).collect();
-    let o_weak: Map<&[u8], &member::Weak> = oc.weak.iter().map(|w| (&*w.name, w)).collect();
-    let mut moved: Set<&[u8]> = Set::default();
+    drop(lost_leaders);
+    // Every name either member defines, refers to, or weakly refers to,
+    // each hashed once, in the order the original then the rewritten
+    // member list them.
+    let mut names = Names::with_capacity(
+        oc.definitions.len() + oc.undefined.len() + oc.weak.len() + rc.undefined.len(),
+    );
     for d in &oc.definitions {
-        if let Some(now) = r_definitions.get(&*d.name) {
-            if now.kind != d.kind {
-                rep.fail("definitions of original members changed kind", || {
-                    format!(
-                        "{}: {}: was {}, now {}",
-                        name(),
-                        show(&d.name),
-                        d.kind.describe(),
-                        now.kind.describe()
-                    )
-                });
-            }
-            continue;
-        }
-        moved.insert(&*d.name);
-        if !d.kind.foldable() || !d.unit.is_some_and(|u| lost_units.contains(&u)) {
-            rep.fail(
-                "definitions that left an original member without their COMDAT moving",
-                || format!("{}: {} ({})", name(), show(&d.name), d.kind.describe()),
-            );
-            continue;
-        }
-        // An alias first (whether or not the name also has a plain
-        // undefined record, as the engine writes it), then undefined.
-        if let Some(w) = r_weak.get(&*d.name)
-            && w.search == turbonop_coff::weak_search::ALIAS
-        {
-            if *w.alternate != *ALIAS_DEFAULT {
-                rep.fail(
-                    "alias weak externals whose default isn't __turbolib$alias",
-                    || format!("{}: {}", name(), show(&d.name)),
-                );
-            } else if !facts
-                .synthesized_definitions
-                .get(&*d.name)
-                .is_some_and(|s| s.iter().any(|s| synthesized.binary_search(s).is_ok()))
-            {
-                rep.fail(
-                    "aliases of moved symbols that no anchored synthesized member defines",
-                    || format!("{}: {}", name(), show(&d.name)),
-                );
-            }
-        } else if r_undefined.contains(&*d.name) {
-            if !facts.defined.contains(&&*d.name) {
-                rep.fail("moved symbols that no member defines", || {
-                    format!("{}: {}", name(), show(&d.name))
-                });
-            }
-        } else if let Some(w) = r_weak.get(&*d.name) {
-            let renamed = [RENAMED, &d.name].concat();
-            if w.search != turbonop_coff::weak_search::NOLIBRARY || *w.alternate != *renamed {
-                rep.fail(
-                    "weak externals that aren't NOLIBRARY with the renamed copy as default",
-                    || format!("{}: {}", name(), show(&d.name)),
-                );
-            } else if !facts
-                .synthesized_definitions
-                .get(&*w.alternate)
-                .is_some_and(|s| s.iter().any(|s| synthesized.binary_search(s).is_ok()))
-            {
-                rep.fail(
-                    "weak externals whose renamed copy no anchored synthesized member defines",
-                    || format!("{}: {}", name(), show(&w.alternate)),
-                );
-            }
-        } else {
-            rep.fail(
-                "moved definitions that their member no longer names",
-                || format!("{}: {}", name(), show(&d.name)),
-            );
-        }
+        names.at(d.name).o_def.get_or_insert(d);
     }
     for d in &rc.definitions {
-        if !o_definitions.contains(&*d.name) {
-            rep.fail("definitions added to original members", || {
-                format!("{}: {}", name(), show(&d.name))
-            });
+        names.at(d.name).r_def.get_or_insert(d);
+    }
+    for n in &oc.undefined {
+        names.at(n).o_undef = true;
+    }
+    for n in &rc.undefined {
+        names.at(n).r_undef = true;
+    }
+    for w in &oc.weak {
+        names.at(w.name).o_weak.get_or_insert(w);
+    }
+    for w in &rc.weak {
+        names.at(w.name).r_weak.get_or_insert(w);
+    }
+    for d in &oc.directives {
+        if starts_with_ignore_case(d, b"/include:") || starts_with_ignore_case(d, b"-include:") {
+            names.at(&d[9..]).o_include = true;
         }
     }
-    // References.
-    for n in &oc.undefined {
-        if !r_undefined.contains(&**n) {
+    // Definitions and weak externals.
+    for (n, s) in &mut names.list {
+        let n: &[u8] = n;
+        if let Some(d) = s.o_def {
+            if let Some(now) = s.r_def {
+                if now.kind != d.kind {
+                    rep.fail("definitions of original members changed kind", || {
+                        format!(
+                            "{}: {}: was {}, now {}",
+                            name(),
+                            show(n),
+                            d.kind.describe(),
+                            now.kind.describe()
+                        )
+                    });
+                }
+            } else {
+                s.moved = true;
+                check_moved(d, s, &synthesized, lost_units.as_slice(), facts, rep, &name);
+            }
+        } else if s.r_def.is_some() {
+            rep.fail("definitions added to original members", || {
+                format!("{}: {}", name(), show(n))
+            });
+        }
+        if s.o_undef && !s.r_undef {
             rep.fail("undefined references that original members lost", || {
                 format!("{}: {}", name(), show(n))
             });
         }
+        if let Some(w) = s.o_weak
+            && s.r_weak != Some(w)
+        {
+            rep.fail("weak externals of original members changed or lost", || {
+                format!("{}: {}", name(), show(n))
+            });
+        }
+        if let Some(w) = s.r_weak
+            && s.o_weak != Some(w)
+            && !s.moved
+        {
+            rep.fail("weak externals added to original members", || {
+                format!("{}: {}", name(), show(n))
+            });
+        }
     }
-    // The defaults of moved symbols' weak externals (their renamed copies).
-    let defaults: Set<&[u8]> = rc
-        .weak
+    // References added: moved symbols, the defaults of their weak
+    // externals (renamed copies), anchors, and precompiled-types members.
+    let defaults: Set<&[u8]> = names
+        .list
         .iter()
-        .filter(|w| moved.contains(&*w.name))
-        .map(|w| &*w.alternate)
+        .filter(|(_, s)| s.moved)
+        .filter_map(|(_, s)| s.r_weak.map(|w| w.alternate))
         .collect();
-    for n in &rc.undefined {
-        if o_undefined.contains(&**n) || moved.contains(&**n) || defaults.contains(&**n) {
+    for (n, s) in &names.list {
+        let n: &[u8] = n;
+        if !s.r_undef || s.o_undef || s.moved || defaults.contains(n) {
             continue;
         }
-        if !facts.anchor_of.contains_key(&**n) {
+        // A precompiled-types member's symbol, which a member whose types
+        // now begin with an LF_PRECOMP naming that member refers to (a
+        // library folded before, folded again: the member now shares the
+        // input's precompiled types). Loading that member loads types
+        // alone; check_pch checks the pairing.
+        if let Some(&k) = facts.types_members.get(n)
+            && rc.pch_use.as_ref().is_some_and(|u| {
+                r.members[k]
+                    .body
+                    .coff()
+                    .and_then(|c| c.pch.as_ref())
+                    .is_some_and(|p| pch::names(u, p, &r.members[k].name))
+            })
+        {
+            rep.expect(
+                "references added to precompiled-types members whose types the member now uses",
+                || format!("{}: {}", name(), show(n)),
+            );
+            continue;
+        }
+        if !facts.anchor_of.contains_key(n) {
             rep.fail(
                 "undefined references added to original members (not moved symbols or anchors)",
                 || format!("{}: {}", name(), show(n)),
             );
-        }
-    }
-    for w in &oc.weak {
-        if r_weak.get(&*w.name) != Some(&w) {
-            rep.fail("weak externals of original members changed or lost", || {
-                format!("{}: {}", name(), show(&w.name))
-            });
-        }
-    }
-    for w in &rc.weak {
-        if o_weak.get(&*w.name) != Some(&w) && !moved.contains(&*w.name) {
-            rep.fail("weak externals added to original members", || {
-                format!("{}: {}", name(), show(&w.name))
-            });
         }
     }
     // Side tables.
@@ -990,38 +1003,12 @@ fn check_member(
     // Under preserve, a synthesized member it anchors refers to nothing it
     // didn't: so loading it loads no member the original didn't.
     if facts.options.pull == Pull::Preserve {
-        let had: Set<&[u8]> = oc
-            .undefined
-            .iter()
-            .map(|n| &**n)
-            .chain(oc.definitions.iter().map(|d| &*d.name))
-            .chain(oc.weak.iter().map(|w| &*w.name))
-            .chain(
-                oc.directives
-                    .iter()
-                    .filter(|d| {
-                        starts_with_ignore_case(d, b"/include:")
-                            || starts_with_ignore_case(d, b"-include:")
-                    })
-                    .map(|d| &d[9..]),
-            )
-            .collect();
-        for &s in &synthesized {
-            let Some(sc) = r.members[s].body.coff() else {
-                continue;
-            };
+        for &sm in &synthesized {
             rep.checked("references of synthesized members their members anchor", 1);
-            for n in sc
-                .undefined
-                .iter()
-                .map(|n| &**n)
-                .chain(sc.weak.iter().map(|w| &*w.name))
-            {
-                if had.contains(n)
-                    || n.starts_with(RENAMED)
-                    || n.starts_with(PCH_SYMBOL)
-                    || facts.anchor_of.contains_key(n)
-                {
+            for &n in facts.foreign.get(&sm).map_or(&[][..], Vec::as_slice) {
+                if names.get(n).is_some_and(|s| {
+                    s.o_def.is_some() || s.o_undef || s.o_weak.is_some() || s.o_include
+                }) {
                     continue;
                 }
                 // A compiler's PCH object's symbol: the synthesized member
@@ -1031,13 +1018,13 @@ fn check_member(
                 if starts_with_ignore_case(n, b"__@@_PchSym_") {
                     rep.expect(
                         "PCH objects' symbols a synthesized member refers to that a member anchoring it didn't (the PCH object loads with it)",
-                        || format!("{}: {} ({})", name(), show(n), r.name(s)),
+                        || format!("{}: {} ({})", name(), show(n), r.name(sm)),
                     );
                     continue;
                 }
                 rep.fail(
                     "names a synthesized member refers to that a member anchoring it didn't (--pull=preserve)",
-                    || format!("{}: {} ({})", name(), show(n), r.name(s)),
+                    || format!("{}: {} ({})", name(), show(n), r.name(sm)),
                 );
             }
         }
@@ -1046,6 +1033,124 @@ fn check_member(
         rep.unchecked(
             "debug sections (.debug$S, .debug$T) of original members (compare-images compares PDBs)",
             name,
+        );
+    }
+}
+
+/// What two members say about one name.
+#[derive(Clone, Copy, Default)]
+struct NameState<'n, 'd> {
+    o_def: Option<&'n member::Definition<'d>>,
+    r_def: Option<&'n member::Definition<'d>>,
+    o_undef: bool,
+    r_undef: bool,
+    o_weak: Option<&'n member::Weak<'d>>,
+    r_weak: Option<&'n member::Weak<'d>>,
+    /// The original member's `/INCLUDE`s name it.
+    o_include: bool,
+    /// The original defines it, the rewritten member doesn't.
+    moved: bool,
+}
+
+/// The names of an original member and its counterpart, each once, in the
+/// order they were first met.
+struct Names<'n, 'd> {
+    at: Map<&'d [u8], u32>,
+    list: Vec<(&'d [u8], NameState<'n, 'd>)>,
+}
+
+impl<'n, 'd> Names<'n, 'd> {
+    fn with_capacity(n: usize) -> Self {
+        Names {
+            at: turbonop_hash::map_with_capacity(n),
+            list: Vec::with_capacity(n),
+        }
+    }
+
+    fn at(&mut self, name: &'d [u8]) -> &mut NameState<'n, 'd> {
+        let k = *self.at.entry(name).or_insert_with(|| {
+            self.list.push((name, NameState::default()));
+            (self.list.len() - 1) as u32
+        });
+        &mut self.list[k as usize].1
+    }
+
+    fn get(&self, name: &[u8]) -> Option<&NameState<'n, 'd>> {
+        self.at.get(name).map(|&k| &self.list[k as usize].1)
+    }
+}
+
+/// A definition `d` of an original member that its counterpart no longer
+/// has (`s` what the counterpart says of the name): it may only have moved
+/// with its COMDAT, and the counterpart must still name it as the engine
+/// writes it.
+fn check_moved(
+    d: &member::Definition<'_>,
+    s: &NameState<'_, '_>,
+    synthesized: &[usize],
+    lost_units: &[bool],
+    facts: &Facts<'_>,
+    rep: &mut Report,
+    name: &dyn Fn() -> String,
+) {
+    if !d.kind.foldable()
+        || !d
+            .unit
+            .is_some_and(|u| lost_units.get(u as usize) == Some(&true))
+    {
+        rep.fail(
+            "definitions that left an original member without their COMDAT moving",
+            || format!("{}: {} ({})", name(), show(d.name), d.kind.describe()),
+        );
+        return;
+    }
+    // An alias first (whether or not the name also has a plain undefined
+    // record, as the engine writes it), then undefined.
+    if let Some(w) = s.r_weak
+        && w.search == turbonop_coff::weak_search::ALIAS
+    {
+        if w.alternate != ALIAS_DEFAULT {
+            rep.fail(
+                "alias weak externals whose default isn't __turbolib$alias",
+                || format!("{}: {}", name(), show(d.name)),
+            );
+        } else if !facts
+            .synthesized_definitions
+            .get(d.name)
+            .is_some_and(|s| s.iter().any(|s| synthesized.binary_search(s).is_ok()))
+        {
+            rep.fail(
+                "aliases of moved symbols that no anchored synthesized member defines",
+                || format!("{}: {}", name(), show(d.name)),
+            );
+        }
+    } else if s.r_undef {
+        if !facts.defined.contains(&d.name) {
+            rep.fail("moved symbols that no member defines", || {
+                format!("{}: {}", name(), show(d.name))
+            });
+        }
+    } else if let Some(w) = s.r_weak {
+        let renamed = [RENAMED, d.name].concat();
+        if w.search != turbonop_coff::weak_search::NOLIBRARY || *w.alternate != *renamed {
+            rep.fail(
+                "weak externals that aren't NOLIBRARY with the renamed copy as default",
+                || format!("{}: {}", name(), show(d.name)),
+            );
+        } else if !facts
+            .synthesized_definitions
+            .get(w.alternate)
+            .is_some_and(|s| s.iter().any(|s| synthesized.binary_search(s).is_ok()))
+        {
+            rep.fail(
+                "weak externals whose renamed copy no anchored synthesized member defines",
+                || format!("{}: {}", name(), show(w.alternate)),
+            );
+        }
+    } else {
+        rep.fail(
+            "moved definitions that their member no longer names",
+            || format!("{}: {}", name(), show(d.name)),
         );
     }
 }
@@ -1102,6 +1207,14 @@ fn check_index(
     let found = turbonop_par::map_range(entries.len().div_ceil(chunk), 1, |c| {
         let mut f: Vec<(usize, bool, String)> = Vec::new();
         for &(name, offset) in &entries[c * chunk..entries.len().min((c + 1) * chunk)] {
+            // (lib.exe indexes the absolute `__turbolib$alias` of a folded
+            // library's synthesized members when it archives one again;
+            // turbolib never does. It never decides what a link loads: a
+            // member referring to it, as its aliases' default, refers to
+            // an anchor too, whose member defines it.)
+            if name == ALIAS_DEFAULT {
+                continue;
+            }
             let Some(d) = defs.get(&name).filter(|d| !d.is_empty()) else {
                 f.push((0, false, show(name)));
                 continue;
@@ -1193,6 +1306,14 @@ fn check_pull(o: &Library<'_>, r: &Library<'_>, p: &Pairing, options: &Options, 
         // (Whether the original definer has side effects, and the example.)
         let mut f: Vec<(bool, String)> = Vec::new();
         for &(name, offset) in &entries[c * chunk..entries.len().min((c + 1) * chunk)] {
+            // (lib.exe indexes the absolute `__turbolib$alias` of a folded
+            // library's synthesized members when it archives one again;
+            // turbolib never does. It never decides what a link loads: a
+            // member referring to it, as its aliases' default, refers to
+            // an anchor too, whose member defines it.)
+            if name == ALIAS_DEFAULT {
+                continue;
+            }
             let Some(&i) = o.by_offset.get(&offset) else {
                 continue;
             };

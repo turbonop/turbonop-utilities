@@ -2553,6 +2553,52 @@ select-any mode it bounds which copies may stand in for each other:
    precompiled-types member), both linker members, `/<ECSYMBOLS>/` when
    needed, and the long names.
 
+### Folding a folded library
+
+A build that makes libraries of libraries (Buck2's) gives turbolib its own
+output as input: synthesized members (`turbolib<n>.obj`), a
+precompiled-types member (`turbolib-types-<hash>.obj`), and members whose
+moved names are alias weak externals. The engine reads them as it reads
+any object, so:
+
+- **Folded members fold again.** An input's synthesized member is an
+  object like another: its units fold with other members' copies of them,
+  and it gives them up as an original member does (its names become
+  aliases, and it refers to the new synthesized member's anchor). A link
+  that loads a member of the input still loads, through that member's
+  anchor, the input's synthesized member, and through its anchor the new
+  one: the chain keeps the alias technique's guarantees (each loaded
+  member's moved names are defined by an alias until the anchors bring
+  their strong definitions; the index names the original definers).
+- **Synthesized members of several inputs merge** the same way: two
+  folded libraries' synthesized members holding copies of one inline
+  function are two members holding identical units, and the copy moves to
+  one new synthesized member that both anchor.
+- **Precompiled types.** The input's precompiled-types member stays
+  (users in other libraries may name it); its users are absorbed, and a
+  member that shares the input's records again becomes a user of that
+  member. `verify` accepts the new reference to its PCH symbol when the
+  member's `LF_PRECOMP` names that member, which defines its PCH symbol
+  alone and has no side effects (so loading it resolves no other name).
+- **Names.** New synthesized members skip the names input members have
+  (`turbolib0.obj` is taken by the input's): two members of one name would
+  be one too many, since `lib.exe` replaces one with the other when it
+  archives the library again. A first fold's names are as before.
+- **`__turbolib$alias`.** Every synthesized member defines it, as the same
+  absolute 0. `lib.exe` warns LNK4006 for the second definition when it
+  combines a folded library with anything else (and fails under `/WX`,
+  LNK1218: measured with 14.52); turbolib's `lib` personality doesn't warn
+  about it. `lib.exe` also indexes it; turbolib never does, and `verify`
+  doesn't count that entry: a member that names it, as its aliases'
+  default, names an anchor too, whose member defines it.
+
+`tools/turbolib/refold/run.py` folds once, then folds again alone, with
+more objects, two folded libraries together, and a third time, with
+`--strict`; checks each with `verify` against `lib.exe`'s library of the
+same inputs, for members of one name; and links a program against each and
+against `lib.exe`'s library with both linkers, under `/OPT:REF` and
+`/OPT:NOREF`, for `compare-images` and the programs' output.
+
 ### Side tables
 
 Some sections are per-object tables that are not associative to any one
@@ -3053,6 +3099,38 @@ units. This is documented, and `/EXTRACT` can also re-inline them
   suites.
 - **Debuggers:** spot checks with the VS debugger and WinDbg on the
   corpus. Our own PDB reader does the systematic checking.
+
+### The self-check (`verify=on`)
+
+After folding, turbolib checks the library it wrote against the one it
+would have written unfolded, with `turbolib verify`'s checks
+(`turbonop_verify::library`), in the same process; if the check fails, the
+unfolded library is written instead. What it proves is `verify`'s (see
+below); what it costs:
+
+- **Reading.** Each member of both libraries is read once into a model
+  that borrows its names from the member's bytes (no copy of the millions
+  of names a large library has), with the relocations of `.debug$`
+  sections left unread (most of a `/Z7` object's; nothing checked looks
+  at them: debug information is `compare-images`'s). Each unit's
+  fingerprint is one pass of a two-lane 128-bit hash, keyed per process
+  with keys that aren't the folding engine's, over a canonical form whose
+  fixed-width fields are packed into words; associative sections are
+  ordered by name, characteristics, and size, and hashed for ordering only
+  when those tie. The facts the PCH checks need are read in the same pass
+  (they read every member again before). Members are read on every core,
+  the largest first.
+- **When.** The original library is laid out and read on the other cores
+  while the folded library is written (the write is I/O); then the written
+  file is mapped and read, and the two compared.
+- **Comparing.** Each original member is checked against its counterpart
+  through one table of the names either defines or refers to (each name
+  hashed once, then every check a walk of the table), with each unit's key
+  and identity computed once when it is read; the archive indexes'
+  names are gathered without copying each member's list; members are
+  checked the largest first.
+- `--stats` prints the time of each stage (`self-check ... original laid
+  out and read ..., written library read ..., compared ...`).
 
 ### The tools: `verify` and `compare-images` (2.6)
 

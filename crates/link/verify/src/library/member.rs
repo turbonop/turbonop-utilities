@@ -164,6 +164,9 @@ pub struct Unit<'d> {
     /// `structural`: its copies keep the name of the translation unit they
     /// came from), fingerprint, and the member's environment.
     pub key: u128,
+    /// Its leader's name (as it is) and fingerprint, hashed: what tells
+    /// the units of one member apart.
+    pub id: u128,
 }
 
 /// A unit's key (see [`Unit::key`]).
@@ -732,6 +735,7 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
             size: o.sections[r].size(),
             checksum: d.checksum,
             key: 0,
+            id: 0,
         });
     }
     // Structural: each piece's form as it is found, then each unit's
@@ -808,6 +812,10 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
     c.pieces.sort_unstable();
     for u in &mut c.units {
         u.key = unit_key(u.leader, u.local, u.fingerprint, c.environment, structural);
+        let mut h = H128::new();
+        h.bytes(u.leader);
+        h.u128(u.fingerprint);
+        u.id = h.finish();
     }
     c.pch_use = pch::use_in(o);
     c.pch = pch::pch_in(o);

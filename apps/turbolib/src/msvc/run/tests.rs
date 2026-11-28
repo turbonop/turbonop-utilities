@@ -607,45 +607,63 @@ fn long_and_non_ascii_paths_and_the_output_as_an_input() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
-/// A library folded before, archived again with more members (or two
-/// folded libraries combined): the self-check doesn't accept what folding
-/// makes of it (a member newly referring to the input's precompiled-types
-/// member), so the library is written unfolded, with the warning, and
-/// links as lib.exe's combination would, except that the synthesized
-/// members' `__turbolib$alias` stays out of the index.
+/// A library folded before, folded again with more members, and again
+/// alone (as a build that makes libraries of libraries does): each fold is
+/// kept (no fallback, under `strict`), passes `turbolib verify` against
+/// lib.exe's library of the same inputs, has no two members of one name
+/// (the new synthesized members skip the input's names), and warns no
+/// LNK4006 about the synthesized members' `__turbolib$alias`, which stays
+/// out of the index.
 #[test]
 fn a_folded_library_archived_again() {
+    use turbonop_verify::library;
     let dir = loose_dir("again");
     let o = lib_in(&dir, "x.lib", "--fold=identical --precomp=library");
     assert_eq!(o.exit, 0, "{o:?}");
     let mut env = env_in(&dir);
-    env.turbolib_options = Some("--fold=identical --precomp=library".into());
-    let o = run(
-        Flavor::Lib,
-        &w(&["/nologo", "/Brepro", "/OUT:y.lib", "x.lib", "c.obj"]),
-        &env,
-    );
-    assert_eq!(o.exit, 0, "{o:?}");
-    assert!(
-        o.stdout.contains("turbolib: warning: folding y.lib failed, so it was written unfolded: the self-check failed"),
-        "{o:?}"
-    );
-    let o = run(
-        Flavor::Lib,
-        &w(&["/nologo", "/Brepro", "/OUT:plain.lib", "x.lib", "c.obj"]),
-        &env_in(&dir),
-    );
-    assert_eq!(o.exit, 0, "{o:?}");
-    let y = std::fs::read(dir.join("y.lib")).unwrap();
-    assert_eq!(y, std::fs::read(dir.join("plain.lib")).unwrap());
-    let archive = turbonop_archive::Archive::parse(&y).unwrap();
-    assert!(
-        archive
-            .symbols()
-            .iter()
-            .all(|s| s.name != turbonop_fold::rewrite::ALIAS_DEFAULT),
-        "the alias default is never indexed"
-    );
+    env.turbolib_options = Some("--fold=identical --precomp=library --strict".into());
+    for (out, inputs) in [
+        ("y.lib", &["x.lib", "c.obj"][..]),
+        ("z.lib", &["y.lib"][..]),
+    ] {
+        let out_arg = format!("/OUT:{out}");
+        let args = [&["/nologo", "/Brepro", &out_arg][..], inputs].concat();
+        let o = run(Flavor::Lib, &w(&args), &env);
+        assert_eq!(o.exit, 0, "{out}: {o:?}");
+        assert!(!o.stdout.contains("LNK4006"), "{out}: {o:?}");
+        let plain = format!("plain-{out}");
+        let plain_arg = format!("/OUT:{plain}");
+        let args = [&["/nologo", "/Brepro", &plain_arg][..], inputs].concat();
+        let o = run(Flavor::Lib, &w(&args), &env_in(&dir));
+        assert_eq!(o.exit, 0, "{o:?}");
+        let folded = std::fs::read(dir.join(out)).unwrap();
+        let original = std::fs::read(dir.join(&plain)).unwrap();
+        if out == "y.lib" {
+            assert_ne!(folded, original, "{out} folded");
+        }
+        let report = library::verify(&original, &folded, &library::Options::default()).unwrap();
+        assert!(report.passed(), "{out}: {}", report.text());
+        let archive = turbonop_archive::Archive::parse(&folded).unwrap();
+        let mut names: Vec<String> = archive
+            .files()
+            .map(|m| text(&m.name).to_ascii_lowercase())
+            .collect();
+        let count = names.len();
+        names.sort();
+        names.dedup();
+        assert_eq!(
+            names.len(),
+            count,
+            "{out}: two members of one name: {names:?}"
+        );
+        assert!(
+            archive
+                .symbols()
+                .iter()
+                .all(|s| s.name != turbonop_fold::rewrite::ALIAS_DEFAULT),
+            "the alias default is never indexed"
+        );
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 

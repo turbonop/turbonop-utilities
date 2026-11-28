@@ -379,12 +379,13 @@ impl Linker {
                 // /FAILIFMISMATCH: the first value a key is given (in the
                 // order the files load) is what the others must match;
                 // each one that doesn't is LNK2038, named for its file.
-                for (key, value) in self.config.fail_if_mismatch[mismatch_before..].to_vec() {
-                    match self.mismatch_keys.get(&key) {
+                for (key, value) in &self.config.fail_if_mismatch[mismatch_before..] {
+                    match self.mismatch_keys.get(key) {
                         None => {
-                            self.mismatch_keys.insert(key, (value, name.clone()));
+                            self.mismatch_keys
+                                .insert(key.clone(), (value.clone(), name.clone()));
                         }
-                        Some((first, by)) if *first != value => {
+                        Some((first, by)) if first != value => {
                             self.errors.push(LinkError::error(
                                 2038,
                                 format!(

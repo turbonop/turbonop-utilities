@@ -585,6 +585,27 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
                 }
             }
         }
+        // Windows: a `SECREL` MSVC loads as `mov r32, imm32` near a read of
+        // the TLS array names its variable even where the bytes are equal
+        // (another layout of the template would move it).
+        if ea == eb
+            && in_section
+            && checked
+            && ia.mnemonic() == Mnemonic::Mov
+            && near_tls_read(at)
+            && let [Operand::Reg(_), Operand::Imm(xa)] = ia.operands()
+            && xa.size == 4
+        {
+            let v = i64::from(xa.value as u32);
+            if let (Some(na), Some(nb)) = (a.image.tls(v), b.image.tls(v))
+                && na != nb
+            {
+                fail(
+                    "code whose TLS offsets name other variables",
+                    format!("at +{at:#x}: {} and {}", render(Some(na)), render(Some(nb))),
+                );
+            }
+        }
         for (oa, ob) in ia.operands().iter().zip(ib.operands()) {
             if let (Operand::Mem(ma), Operand::Mem(mb)) = (oa, ob)
                 && !ma.is_rip_relative()

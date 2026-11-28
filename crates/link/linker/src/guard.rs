@@ -7,8 +7,18 @@
 //! `.gehcont$y`). Each table is its targets' RVAs, sorted, each once (4
 //! bytes each); the load configuration finds them through the
 //! `__guard_*` symbols link.exe defines.
+//!
+//! An object not compiled with `/guard:cf` (`@feat.00` without 0x800, or
+//! none) lists nothing, so link.exe takes as targets every function it
+//! might take the address of: each function a `REL32` or `ADDR64`
+//! relocation of it refers to (from any of its sections in the image),
+//! calls included, as the function's definition says (typed a function, in
+//! a code section; an import's thunk). Other relocations (`ADDR32NB`, as
+//! unwind data's, `REL32_1` to `_5`, `SECREL`, `SECTION`) don't make
+//! targets, nor does a symbol typed a function where it's referred to but
+//! not where it's defined.
 
-use crate::object::{Selection, SymbolKind};
+use crate::object::{Selection, SymbolKind, scn};
 use crate::resolve::{Def, FileKind, NONE, Resolved};
 
 /// What the `__guard_*` symbols link.exe defines are.
@@ -90,8 +100,8 @@ impl Tables {
 /// imports' `__imp_load_` thunks' chunks.
 pub fn tables(
     r: &Resolved,
-    chunk_of: &dyn Fn(u32, u32) -> u32,
-    thunk_of: &dyn Fn(u32) -> Option<u32>,
+    chunk_of: &(dyn Fn(u32, u32) -> u32 + Sync),
+    thunk_of: &(dyn Fn(u32) -> Option<u32> + Sync),
     delay_thunks: &[u32],
 ) -> Tables {
     let mut t = Tables::default();
@@ -173,6 +183,13 @@ pub fn tables(
             }
         }
     }
+    // The functions objects not compiled with /guard:cf may take the
+    // address of.
+    for p in unguarded(r, chunk_of, &global) {
+        if seen[0].insert(p) {
+            t.functions.push(p);
+        }
+    }
     // The entry point is a valid target too; and with delay loading, its
     // helper (the tail merges call it).
     let helper = (!delay_thunks.is_empty())
@@ -199,6 +216,133 @@ pub fn tables(
         }
     }
     t
+}
+
+/// Whether an object was compiled with `/guard:cf` (`@feat.00`'s 0x800).
+fn guarded(object: &crate::object::Object) -> bool {
+    object.feat_00.is_some_and(|x| x & 0x800 != 0)
+}
+
+/// Whether a symbol is defined as a function: typed one, in a code
+/// section.
+fn is_function(object: &crate::object::Object, ty: u16, section: u32) -> bool {
+    ty & 0x30 == 0x20
+        && object
+            .sections
+            .get(section as usize)
+            .is_some_and(|s| s.characteristics & (scn::CNT_CODE | scn::MEM_EXECUTE) != 0)
+}
+
+/// The places of the functions the objects not compiled with `/guard:cf`
+/// refer to by a `REL32` or `ADDR64` relocation (in no order, perhaps more
+/// than once), `global` placing a global symbol.
+fn unguarded(
+    r: &Resolved,
+    chunk_of: &(dyn Fn(u32, u32) -> u32 + Sync),
+    global: &(dyn Fn(u32) -> Option<Place> + Sync),
+) -> Vec<Place> {
+    const ADDR64: u16 = 1;
+    const REL32: u16 = 4;
+    let files: Vec<u32> = r
+        .files
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| matches!(&f.kind, FileKind::Object { object, .. } if !guarded(object)))
+        .map(|(i, _)| crate::n32(i))
+        .collect();
+    if files.is_empty() {
+        return Vec::new();
+    }
+    // Which globals are defined as functions: by the symbol that defines
+    // each (where it's referred to, it may be typed otherwise), or an
+    // import's thunk.
+    let defined: Vec<Vec<u32>> = turbonop_par::map_range(r.files.len(), 16, |f| {
+        let FileKind::Object {
+            object, globals, ..
+        } = &r.files[f].kind
+        else {
+            return Vec::new();
+        };
+        let mut mine = Vec::new();
+        for (k, sym) in object.symbols.iter().enumerate() {
+            if let SymbolKind::Defined { section, .. } = sym.kind
+                && is_function(object, sym.ty, section)
+                && let Some(&g) = globals.get(k)
+                && g != NONE
+                && matches!(r.globals[g as usize].def,
+                    Def::Section { file, section: s, .. } if file as usize == f && s == section)
+            {
+                mine.push(g);
+            }
+        }
+        mine
+    });
+    let mut function = vec![false; r.globals.len()];
+    for g in defined.into_iter().flatten() {
+        function[g as usize] = true;
+    }
+    for (g, x) in r.globals.iter().enumerate() {
+        if matches!(x.def, Def::ImportThunk(_)) {
+            function[g] = true;
+        }
+    }
+    // A global, its aliases followed.
+    let target = |mut g: u32| -> u32 {
+        for _ in 0..64 {
+            match r.globals[g as usize].def {
+                Def::Alias(to) => g = to,
+                _ => break,
+            }
+        }
+        g
+    };
+    let found: Vec<Vec<Place>> = turbonop_par::map(&files, 1, |&f| {
+        let FileKind::Object {
+            object, globals, ..
+        } = &r.files[f as usize].kind
+        else {
+            return Vec::new();
+        };
+        let mut mine = Vec::new();
+        for (s, sec) in object.sections.iter().enumerate() {
+            if !sec.is_image() || chunk_of(f, crate::n32(s)) == u32::MAX {
+                continue;
+            }
+            for rel in sec.relocations {
+                if !matches!(rel.kind.get(), ADDR64 | REL32) {
+                    continue;
+                }
+                let k = rel.symbol_table_index.get();
+                let place = match globals.get(k as usize) {
+                    Some(&g) if g != NONE => {
+                        let g = target(g);
+                        if function[g as usize] {
+                            global(g)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => match object.symbols.get(k as usize) {
+                        Some(sym) => match sym.kind {
+                            SymbolKind::Local { section, value }
+                                if is_function(object, sym.ty, section) =>
+                            {
+                                let c = chunk_of(f, section);
+                                (c != u32::MAX).then_some(Place::Chunk(c, value))
+                            }
+                            _ => None,
+                        },
+                        None => None,
+                    },
+                };
+                if let Some(p @ Place::Chunk(..)) = place {
+                    mine.push(p);
+                }
+            }
+        }
+        mine
+    });
+    found.into_iter().flatten().collect()
 }
 
 /// The bytes of each function table entry: 4 (the RVA), and 5 when an

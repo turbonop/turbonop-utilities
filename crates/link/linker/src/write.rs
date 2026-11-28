@@ -401,7 +401,7 @@ impl<'a> Image<'a> {
             }
             ChunkKind::DelayNames(d) => {
                 let names = self.delay_rva(ChunkKind::DelayHintNames).unwrap_or(0);
-                for (k, &f) in self.l.delay_dlls[d as usize].imports.iter().enumerate() {
+                for (k, &f) in self.l.delay_tables[d as usize].iter().enumerate() {
                     let FileKind::Import { import, .. } = &self.r.files[f as usize].kind else {
                         continue;
                     };
@@ -430,7 +430,7 @@ impl<'a> Image<'a> {
             }
             ChunkKind::DelayAddresses(d) | ChunkKind::DelayUnload(d) => {
                 // Each slot starts at its import's __imp_load_ thunk.
-                for (k, &f) in self.l.delay_dlls[d as usize].imports.iter().enumerate() {
+                for (k, &f) in self.l.delay_tables[d as usize].iter().enumerate() {
                     let thunk = self.delay_rva(ChunkKind::DelayThunk(f)).unwrap_or(0);
                     let v = self.base + u64::from(thunk);
                     out[k * 8..k * 8 + 8].copy_from_slice(&v.to_le_bytes());

@@ -787,9 +787,7 @@ delay loading, resources; with `/DEBUG /INCREMENTAL:NO`, the
 same but for the PDB's GUID, age, and name.
 
 - **Not yet, for native x64 images:** delay loading on other machines;
-  `/GUARD:CF` for objects not compiled with `/guard:cf` (link.exe's own
-  address-taken analysis), `/GUARD:XFG`, and an exported function that is
-  also a target (its flag); `/MAPINFO`'s
+  `/GUARD:XFG`; `/MAPINFO`'s
   other options (`FIXUPS`; `/MAPINFO:EXPORTS` is done), the "Creating
   library X and object Y" message, `/INCREMENTAL`'s padding (it links
   fully),
@@ -813,15 +811,21 @@ same but for the PDB's GUID, age, and name.
   0xF6); the map's `$R` symbols with two or more
   `.res` files or an embedded manifest (cvtres's object for them: which
   offsets, which origin), and a map of an LLVM-size link checked line for
-  line; a delay-loaded DLL's tables with
-  two or more imports (link.exe's order, docs/turbolink.md);
-  where 4 bytes of padding fall before `.idata$2` in `llvm-nm` and
-  `llvm-objdump` (link.exe's delay-load room there is 0x108 with the
-  descriptors starting on 8, which the rule in docs/turbolink.md gives
-  0x104 for; it holds for llvm-tblgen, llc, opt and six small programs:
-  not the number of DLLs, the delay-loaded names, the options, the
-  tables' alignment, or the first DLL in the directory). llvm-tblgen,
-  llc, opt, llvm-mc and llvm-ar are link.exe's images.
+  line; the Rich header's order when an ml64 object comes before C
+  objects (link.exe lists masm's entry, 0x103, before the compiler's,
+  0x104, where turbolink lists them the other way round; seen with
+  `start.obj` from ml64, then cl's objects). llvm-tblgen, llc, opt,
+  llvm-mc and llvm-ar are link.exe's images (`llvm-nm` and
+  `llvm-objdump` to check again: their delay-load room, which the old
+  0x104-or-0x108 rule got wrong, is now link.exe's measured rule).
+- **Delay loading by archive member name:** link.exe matches
+  `/DELAYLOAD` against an import's archive member name, not the DLL
+  name in the import object. With x.dll's members renamed z.dll,
+  `/DELAYLOAD:x.dll` leaves x.dll an ordinary import and
+  `/DELAYLOAD:z.dll` delay-loads it (its descriptor still names x.dll).
+  turbolink matches the DLL name. The two names are the same in every
+  import library lib.exe or link.exe makes. The delay tables' sort uses
+  the member name, as link.exe does.
 - **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
   under `/DEBUG` with `/OPT:REF`; the Rich
   header's walk when a library is searched in several passes (each pass's
